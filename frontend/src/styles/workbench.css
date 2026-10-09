@@ -63,6 +63,284 @@
 .briefing p {
   font-size: 0.86rem !important;
 }
+.briefing-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.briefing-cites code,
+.ask-ids code {
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.74rem;
+}
+.ask-open {
+  justify-self: start;
+}
+
+/* ---------- Live model reasoning ---------- */
+.thinking {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ai) 40%, transparent);
+  background: color-mix(in srgb, var(--ai) 8%, transparent);
+  font-size: 0.84rem !important;
+  color: var(--text-2);
+}
+.thinking strong {
+  color: var(--ai);
+}
+.thinking-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ai);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ai) 55%, transparent);
+  animation: think-pulse 1.4s ease-out infinite;
+}
+.thinking-time {
+  margin-left: auto;
+  font: 600 0.78rem/1 var(--mono);
+  color: var(--ai);
+  white-space: nowrap;
+}
+@keyframes think-pulse {
+  70% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dot {
+    animation: none;
+  }
+}
+
+/* ---------- AI trace ---------- */
+.ai-trace {
+  display: grid;
+  gap: 1rem;
+}
+.ai-headline {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ai) 35%, transparent);
+  background: color-mix(in srgb, var(--ai) 7%, transparent);
+  color: var(--text);
+  line-height: 1.5;
+}
+.ai-headline svg {
+  flex: none;
+  margin-top: 0.2rem;
+  color: var(--ai);
+}
+.ai-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+.ai-tiles > div {
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.ai-tiles dt {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font: 600 0.7rem/1.2 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ai-tiles dd {
+  margin-top: 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.ai-tiles dd small {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ai-tiles .is-alert dd {
+  color: var(--fail);
+}
+.ai-tiles .is-warn dd {
+  color: var(--warn);
+}
+.ai-calls {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+}
+.ai-calls > li {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.ai-calls > li.is-pending {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ai) 50%, transparent);
+}
+.ai-role {
+  justify-self: start;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ai) 12%, transparent);
+  font: 600 0.72rem/1.2 var(--mono);
+  color: var(--ai);
+}
+.ai-call-title {
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-call-summary {
+  margin-top: 0.2rem;
+  font-size: 0.84rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.ai-call-body details {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.ai-call-body details ul {
+  margin: 0.3rem 0 0 1.1rem;
+}
+.ai-call-meta {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: end;
+  min-width: 150px;
+}
+.ai-bar {
+  width: 120px;
+  height: 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ai-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--grad);
+}
+.ai-num {
+  font: 500 0.74rem/1 var(--mono);
+  color: var(--muted);
+}
+.ai-foot {
+  font-size: 0.8rem;
+}
+
+/* ---------- Ask TwinOps ---------- */
+.ask {
+  display: grid;
+  gap: 1rem;
+}
+.ask-form {
+  display: grid;
+  gap: 0.6rem;
+}
+.ask-form label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-weight: 700;
+  color: var(--text);
+}
+.ask-form label .muted {
+  font-weight: 500;
+}
+.ask-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.ask-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-2);
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+}
+.ask-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.ask-suggest button {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+.ask-suggest button:hover:not(:disabled) {
+  border-color: var(--ai);
+  color: var(--text);
+}
+.ask-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+}
+.ask-list > li {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.ask-q {
+  font-weight: 700;
+  color: var(--text);
+}
+.ask-a {
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.ask-meta,
+.ask-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.78rem;
+}
+@media (max-width: 760px) {
+  .ai-calls > li {
+    grid-template-columns: 1fr;
+  }
+  .ai-call-meta {
+    justify-items: start;
+  }
+}
 .approval-error {
   grid-column: 1 / -1;
   color: var(--fail);

@@ -1,4 +1,4 @@
-import { Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
+import { Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { createIncident as createLiveIncident, fetchConfig, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident } from '../api/live.ts';
 import { SiteHeader } from '../components/SiteHeader.tsx';
@@ -10,13 +10,14 @@ import { buildTopology, PACK_OPTIONS } from '../engine/topology.ts';
 import type { FaultId, PackId, Phase, RunEvent } from '../engine/types.ts';
 import { useReducedMotion } from '../lib/hooks.ts';
 import { ApprovalDialog } from './ApprovalDialog.tsx';
-import { Evidence } from './Evidence.tsx';
+import { ModelThinking } from './AiTrace.tsx';
+import { Evidence, type AskTarget, type EvidenceTab } from './Evidence.tsx';
 import { CandidateBoard, Counters, PhaseStepper, Stage, Timeline } from './panels.tsx';
 import { liveView, localView, type RunView } from './runView.ts';
 import { fmtClock, usePlayback } from './usePlayback.ts';
 
 const SPEEDS = [0.5, 1, 2, 4];
-const ANNOUNCE = new Set(['fault_injected', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed']);
+const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed']);
 const OUTCOME_KINDS = new Set(['post_check', 'rolled_back', 'drift_detected', 'approval_rejected']);
 
 function readParams() {
@@ -83,6 +84,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
+  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('hypotheses');
   const [drifted, setDrifted] = useState(false);
   const topo = useMemo(() => buildTopology(pack), [pack]);
   const engine: 'live' | 'local' = backend && enginePref === 'live' ? 'live' : 'local';
@@ -278,6 +280,12 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const seed = live?.seed ?? session?.run.seed;
   const twinLabel = backend?.twin.backend === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
   const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth);
+  const thinking = current?.kind === 'model_call' ? current : undefined;
+  const ask: AskTarget | null = live && backend?.planner.kind === 'llm' ? { incidentId: live.id, model: backend.planner.model, ready: Boolean(view) } : null;
+  const openAsk = () => {
+    setEvidenceTab('ask');
+    window.setTimeout(() => document.getElementById('ask-input')?.focus(), 50);
+  };
 
   return (
     <div className="wb">
@@ -391,6 +399,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                   <p className="stage-kicker">{runId ? `Run ${runId} · seed ${seed}` : 'Contacting the backend'}</p>
                   <h2 id="verdict-title">Investigating — {frame.phase}</h2>
                   <div className="scan" aria-hidden="true" />
+                  {thinking && <ModelThinking key={thinking.seq} event={thinking} />}
                   <p>Sealed fault: <span className="sealed">••••••••</span></p>
                 </>
               )}
@@ -420,13 +429,31 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                       <Siren size={16} aria-hidden="true" /> Escalated with evidence — no change proposed.
                     </p>
                   )}
+                  {thinking && <ModelThinking key={thinking.seq} event={thinking} />}
                   {view.narrative && (
                     <div className="briefing">
                       <p className="briefing-head">
                         <Bot size={13} aria-hidden="true" /> AI approver briefing · {view.narrative.model} · not authoritative
                       </p>
                       <p>{view.narrative.summary}</p>
+                      <p className="briefing-cites">
+                        {view.narrative.evidenceIds.length ? (
+                          <>
+                            <StatusChip tone="ok">{view.narrative.evidenceIds.length} cited IDs verified</StatusChip>
+                            {view.narrative.evidenceIds.map((id) => (
+                              <code key={id}>{id}</code>
+                            ))}
+                          </>
+                        ) : (
+                          <StatusChip tone="warn">cites no evidence; verify against the Proof Pack</StatusChip>
+                        )}
+                      </p>
                     </div>
+                  )}
+                  {ask && (
+                    <button type="button" className="btn btn-ghost btn-sm ask-open" onClick={openAsk}>
+                      <MessageSquareText size={15} aria-hidden="true" /> Ask TwinOps about this run
+                    </button>
                   )}
                   {awaiting && view.run.selected && (
                     <div className="verdict-actions">
@@ -474,11 +501,22 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 </>
               )}
             </section>
-            <Timeline events={visible} />
+            <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />
           </aside>
         </div>
 
-        <Evidence view={view} frame={frame} inspectId={inspectId} onInspect={setInspectId} verdictVisible={verdictVisible} decisionVisible={Boolean(outcome)} />
+        <Evidence
+          view={view}
+          frame={frame}
+          events={visible}
+          ask={ask}
+          tab={evidenceTab}
+          onTab={setEvidenceTab}
+          inspectId={inspectId}
+          onInspect={setInspectId}
+          verdictVisible={verdictVisible}
+          decisionVisible={Boolean(outcome)}
+        />
       </main>
 
       {view?.run.selected && (

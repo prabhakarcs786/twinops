@@ -1,10 +1,12 @@
 import { Download, FileCode2, FileText } from 'lucide-react';
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, type KeyboardEvent } from 'react';
 import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { describeStep } from '../engine/catalogue.ts';
 import { VERDICT_LABEL } from '../engine/orchestrator.ts';
 import { shortHash } from '../engine/sha256.ts';
-import type { Frame, GateCheck, GateStatus } from '../engine/types.ts';
+import type { Frame, GateCheck, GateStatus, RunEvent } from '../engine/types.ts';
+import { AiTrace } from './AiTrace.tsx';
+import { AskPanel } from './AskPanel.tsx';
 import type { RunView } from './runView.ts';
 
 const GATE_NAMES: Record<string, string> = {
@@ -20,26 +22,40 @@ const GATE_NAMES: Record<string, string> = {
 
 const GATE_TONE: Record<GateStatus, ChipTone> = { pass: 'ok', fail: 'fail', warn: 'warn', skip: 'skip', pending: 'pending' };
 
-type Tab = 'hypotheses' | 'gate' | 'diff' | 'pack';
-const TABS: { id: Tab; label: string }[] = [
+export type EvidenceTab = 'hypotheses' | 'gate' | 'diff' | 'ai' | 'ask' | 'pack';
+const ALL_TABS: { id: EvidenceTab; label: string }[] = [
   { id: 'hypotheses', label: 'Hypotheses' },
   { id: 'gate', label: 'Proof Gate' },
   { id: 'diff', label: 'Diff & rollback' },
+  { id: 'ai', label: 'AI trace' },
+  { id: 'ask', label: 'Ask TwinOps' },
   { id: 'pack', label: 'Proof Pack' },
 ];
+
+export interface AskTarget {
+  incidentId: string;
+  model: string;
+  ready: boolean;
+}
 
 interface Props {
   view: RunView | null;
   frame: Frame;
+  events: RunEvent[];
+  ask: AskTarget | null;
+  tab: EvidenceTab;
+  onTab: (tab: EvidenceTab) => void;
   inspectId: string | null;
   onInspect: (id: string) => void;
   verdictVisible: boolean;
   decisionVisible: boolean;
 }
 
-export function Evidence({ view, frame, inspectId, onInspect, verdictVisible, decisionVisible }: Props) {
-  const [tab, setTab] = useState<Tab>('hypotheses');
-  const refs = useRef<Record<Tab, HTMLButtonElement | null>>({ hypotheses: null, gate: null, diff: null, pack: null });
+export function Evidence({ view, frame, events, ask, tab: requested, onTab, inspectId, onInspect, verdictVisible, decisionVisible }: Props) {
+  const TABS = ask ? ALL_TABS : ALL_TABS.filter((t) => t.id !== 'ask');
+  const tab = TABS.some((t) => t.id === requested) ? requested : 'hypotheses';
+  const setTab = onTab;
+  const refs = useRef<Partial<Record<EvidenceTab, HTMLButtonElement | null>>>({});
 
   const decided = frame.candidates.filter((c) => ['pass', 'warn', 'rejected', 'superseded'].includes(c.status));
   const activeId = inspectId && decided.some((c) => c.id === inspectId) ? inspectId : (frame.selectedId ?? decided.at(-1)?.id ?? null);
@@ -72,7 +88,7 @@ export function Evidence({ view, frame, inspectId, onInspect, verdictVisible, de
   );
 
   return (
-    <section className="evidence" aria-label="Evidence">
+    <section className="evidence" id="evidence" aria-label="Evidence">
       <div className="tabs" role="tablist" aria-label="Evidence views" onKeyDown={onKey}>
         {TABS.map((t) => (
           <button
@@ -195,6 +211,10 @@ export function Evidence({ view, frame, inspectId, onInspect, verdictVisible, de
           ) : (
             <p className="muted">Every candidate is a typed change from the catalogue — never a free-text command — so its exact diff can be reviewed.</p>
           ))}
+
+        {tab === 'ai' && <AiTrace events={events} frame={frame} />}
+
+        {tab === 'ask' && ask && <AskPanel key={ask.incidentId} incidentId={ask.incidentId} model={ask.model} ready={ask.ready} />}
 
         {tab === 'pack' &&
           (view && verdictVisible ? (

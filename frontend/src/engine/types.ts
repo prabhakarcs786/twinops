@@ -263,6 +263,7 @@ export type EventKind =
   | 'post_check'
   | 'rolled_back'
   | 'planner_note'
+  | 'model_call'
   | 'narrative'
   | 'run_failed';
 

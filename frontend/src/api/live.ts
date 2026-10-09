@@ -72,6 +72,21 @@ export const postDrift = (id: string, token?: string) =>
 
 export const getReveal = (id: string) => json<{ code: string; label: string; description: string }>(`/api/incidents/${encodeURIComponent(id)}/reveal`);
 
+export interface AskAnswer {
+  answer: string;
+  answerable: boolean;
+  evidenceIds: string[];
+  discardedIds: string[];
+  model: string;
+  latencyMs: number;
+  tokens: number;
+  remaining: number;
+  authoritative: false;
+}
+
+export const askIncident = (id: string, question: string) =>
+  json<AskAnswer>(`/api/incidents/${encodeURIComponent(id)}/ask`, { method: 'POST', body: JSON.stringify({ question }) });
+
 export const proofPackUrl = (id: string, format: 'json' | 'html') => `${API}/api/incidents/${encodeURIComponent(id)}/proof-pack?format=${format}`;
 
 export interface EvaluationReport {

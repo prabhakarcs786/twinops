@@ -63,6 +63,14 @@ def test_incident_streams_events_then_applies_after_approval(client):
     assert "sandbox" in html.headers["content-security-policy"]
 
 
+def test_ask_requires_an_llm_planner(client):
+    created = client.post("/api/incidents", json={"pack": "core", "fault": "dns_failure", "seed": 3, "pace": 0}).json()
+    read_events(client, created["eventsUrl"])
+    resp = client.post(f"/api/incidents/{created['incidentId']}/ask", json={"question": "Why was A rejected?"})
+    assert resp.status_code == 409 and "LLM planner" in resp.json()["detail"]
+    assert client.post(f"/api/incidents/{created['incidentId']}/ask", json={"question": "x" * 401}).status_code == 422
+
+
 def test_validation_rejects_bad_input(client):
     assert client.post("/api/incidents", json={"fault": "drop_tables"}).status_code == 422
     created = client.post("/api/incidents", json={"fault": "dns_failure", "seed": 2, "pace": 0}).json()

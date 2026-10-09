@@ -143,6 +143,24 @@ async def _planner_notes(rec: Recorder, planner: Planner, actor: str) -> None:
         await rec.push(300, "planner_note", rec.frame["phase"], actor, note.get("tone", "ai"), note["title"], note["summary"], note.get("raw"))
 
 
+MODEL_ROLES = {"diagnose": "ranking root-cause hypotheses", "propose": "proposing typed fixes", "challenge": "choosing adverse challenges",
+               "revise": "revising a fix after a failed challenge", "narrate": "drafting the approver briefing"}
+
+
+def _announce_model_calls(rec: Recorder, planner: Planner) -> None:
+    """Live status while a model call is in flight; local models can take tens of seconds per call."""
+    if not hasattr(planner, "on_call"):
+        return
+
+    async def announce(role: str) -> None:
+        model = getattr(planner, "model", "model")
+        await rec.push(0, "model_call", rec.frame["phase"], "challenge" if role == "challenge" else "diagnosis", "ai", f"{model} is reasoning",
+                       f"{MODEL_ROLES.get(role, role)} · {getattr(planner, 'provider', 'llm')}:{model}",
+                       {"role": role, "provider": getattr(planner, "provider", None), "model": model})
+
+    planner.on_call = announce  # type: ignore[attr-defined]
+
+
 async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int, emit: Emit | None = None, include_evaluation_case: bool = True) -> dict[str, Any]:
     """Runs the investigation up to the human gate. Never writes to the demo network."""
     started = time.monotonic()
@@ -150,6 +168,7 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
     demo, twin, planner = session.demo, session.twin, session.planner
     rec = Recorder(idle_frame(topo), demo, emit, session.pace, session.t0, session.events)
     push = rec.push
+    _announce_model_calls(rec, planner)
     versions = {"engine": ENGINE_VERSION, "topology": topo["version"], "catalogue": CATALOGUE_VERSION, "policy": POLICY_VERSION, "planner": planner.version,
                 "twin": twin.backend}
 
@@ -385,6 +404,33 @@ def proof_summary(run: dict[str, Any]) -> dict[str, Any]:
                         "challenges": [{"label": ch["label"], "ok": ch["ok"]} for ch in c["challenges"]]} for c in run["candidates"]],
         "selected": run["selected"]["change"]["id"] if run["selected"] else None,
         "untested": run["untested"],
+    }
+
+
+def qa_context(run: dict[str, Any], outcome: dict[str, Any] | None) -> dict[str, Any]:
+    """Everything an operator may ask about, with the IDs an answer is allowed to cite."""
+    obs = run["observation"]
+    probes = [{k: p.get(k) for k in ("id", "label", "ok", "failure", "detail")} for p in obs["probes"]]
+    candidates = [{
+        "id": c["change"]["id"], "label": c["change"]["label"], "origin": c["change"]["origin"], "rationale": c["change"].get("rationale", ""),
+        "steps": [describe_step(s) for s in c["change"]["steps"]], "decision": c["decision"], "reasons": c["reasons"],
+        "gates": [{"id": g["id"], "status": g["status"], "reason": g["reason"]} for g in c["gates"]],
+        "challenges": [{"id": ch["id"], "label": ch["label"], "ok": ch["ok"], "detail": ch["detail"]} for ch in c["challenges"]],
+        "latencyDeltaMs": c.get("latencyDeltaMs"),
+    } for c in run["candidates"]]
+    hypotheses = [{k: h.get(k) for k in ("id", "title", "rationale", "supporting", "contradicting")} for h in run["hypotheses"]]
+    citable = {*(p["id"] for p in probes), *(a["id"] for a in obs["alarms"]), *(h["id"] for h in hypotheses), *(c["id"] for c in candidates),
+               *(g["id"] for c in candidates for g in c["gates"]), *(ch["id"] for c in candidates for ch in c["challenges"])}
+    return {
+        "run": {"verdict": run["verdict"], "selected": run["selected"]["change"]["id"] if run["selected"] else None,
+                "reproduction": {k: run["reproduction"][k] for k in ("matched", "total", "slice")}, "untested": run["untested"],
+                "outcome": {k: outcome[k] for k in ("status", "reason")} if outcome else None},
+        "observation": {"probes": probes, "alarms": [{k: a[k] for k in ("id", "node", "text")} for a in obs["alarms"]]},
+        "hypotheses": hypotheses,
+        "candidates": candidates,
+        "gate_names": {"G1": "reproduced in twin", "G2": "restores affected journeys", "G3": "no regression / negative tests", "G4": "survives challenges",
+                       "G5": "policy and blast radius", "G6": "rollback rehearsed", "G7": "soft checks", "G8": "human approval"},
+        "citable_ids": sorted(citable),
     }
 
 

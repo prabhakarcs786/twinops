@@ -66,6 +66,14 @@ test('live unsupported fault stops as INCONCLUSIVE server-side', async ({ page }
   await expect(page.getByRole('button', { name: 'Review & approve' })).toHaveCount(0);
 });
 
+test('AI trace explains a runbook run, and Ask needs an LLM planner', async ({ page }) => {
+  await breakAndWaitForVerdict(page, 'dns_failure', 'PASS UNDER DEFINED TESTS');
+  await page.getByRole('tab', { name: 'AI trace' }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('deterministic runbook planner');
+  await expect(page.getByRole('tab', { name: 'Ask TwinOps' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Ask TwinOps about this run' })).toHaveCount(0);
+});
+
 test('the in-browser engine stays available next to the backend', async ({ page }) => {
   await page.goto('/workbench?speed=instant&fault=dns_failure');
   await page.getByRole('button', { name: 'In-browser' }).click();

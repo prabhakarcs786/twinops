@@ -1,9 +1,12 @@
 import asyncio
 import json
 
+import pytest
+
 from twinops.engine import run_model
 from twinops.harness import SUPPORTED_FAULTS
-from twinops.planner.llm import LLMPlanner
+from twinops.orchestrator import qa_context
+from twinops.planner.llm import MAX_QUESTIONS, LLMPlanner
 from twinops.planner.llm_client import LLMError, ScriptedClient
 
 
@@ -97,3 +100,31 @@ def test_call_budget_is_enforced():
     session = asyncio.run(run_model("core", "cert_expiry", 4, planner=LLMPlanner(client, max_calls=1)))
     assert len(client.calls) == 1
     assert session.run["verdict"] in ("PASS_UNDER_DEFINED_TESTS", "PASS_WITH_WARNINGS")
+
+
+def test_every_model_call_is_announced_before_its_result():
+    session = _run("dns_failure", ScriptedClient(SCRIPT))
+    kinds = [e["kind"] for e in session.events]
+    calls = [e for e in session.events if e["kind"] == "model_call"]
+    assert len(calls) == kinds.count("planner_note") >= 4
+    assert kinds.index("model_call") < kinds.index("hypotheses")
+    assert {"diagnose", "propose", "narrate"} <= {c["raw"]["role"] for c in calls}
+
+
+def test_operator_questions_are_answered_from_run_evidence_only():
+    answer = {"answer": "A was rejected because G2 failed [cand-A] [G2].", "answerable": True, "evidence_ids": ["cand-A", "G2", "MADE-UP"]}
+    client = ScriptedClient({**SCRIPT, "ask": lambda p: answer})
+    session = _run("route_misconfig", client)
+    ctx = qa_context(session.run, session.outcome)
+
+    result = asyncio.run(session.planner.answer("Why was A rejected?", ctx))
+    assert result["evidenceIds"] == ["cand-A", "G2"] and result["discardedIds"] == ["MADE-UP"]
+    assert result["authoritative"] is False and result["remaining"] == MAX_QUESTIONS - 1
+    role, payload = client.calls[-1]
+    assert role == "ask" and payload["question"] == "Why was A rejected?"
+    assert "route_misconfig" not in json.dumps(payload), "the sealed fault label never reaches the model"
+
+    for _ in range(MAX_QUESTIONS - 1):
+        asyncio.run(session.planner.answer("again?", ctx))
+    with pytest.raises(LLMError, match="question budget"):
+        asyncio.run(session.planner.answer("one more?", ctx))

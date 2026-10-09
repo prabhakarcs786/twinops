@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .config import Settings
 from .harness import ALL_FAULTS, FAULT_INFO, SUPPORTED_FAULTS
+from .planner.llm_client import LLMError
 from .proofpack import build_proof_pack, proof_pack_html
 from .service import BusyError, LiveIncident, Registry
 from .topology import PACKS
@@ -43,9 +44,14 @@ class DecisionRequest(BaseModel):
     comment: str = Field(default="", max_length=500)
 
 
+class AskRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=400)
+
+
 class RateLimiter:
-    def __init__(self, per_minute: int) -> None:
+    def __init__(self, per_minute: int, what: str = "incidents started") -> None:
         self.per_minute = per_minute
+        self.what = what
         self.hits: dict[str, deque[float]] = defaultdict(deque)
 
     def check(self, key: str) -> None:
@@ -54,7 +60,7 @@ class RateLimiter:
         while q and now - q[0] > 60:
             q.popleft()
         if len(q) >= self.per_minute:
-            raise HTTPException(429, "rate limit: too many incidents started from this client, wait a minute")
+            raise HTTPException(429, f"rate limit: too many {self.what} from this client, wait a minute")
         q.append(now)
 
 
@@ -62,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     registry = Registry(settings)
     limiter = RateLimiter(settings.rate_limit_per_min)
+    ask_limiter = RateLimiter(max(6, settings.rate_limit_per_min), "questions")
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -200,6 +207,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return registry.reveal(get_live(incident_id))
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/incidents/{incident_id}/ask")
+    async def ask(incident_id: str, body: AskRequest, request: Request) -> dict[str, Any]:
+        ask_limiter.check(request.client.host if request.client else "unknown")
+        live = get_live(incident_id)
+        try:
+            return await registry.ask(live, body.question.strip())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except LLMError as exc:
+            raise HTTPException(502, f"model error: {exc}") from exc
 
     @app.get("/api/incidents/{incident_id}/proof-pack", response_model=None)
     async def proof_pack(incident_id: str, format: Literal["json", "html"] = "json") -> Response:  # noqa: A002

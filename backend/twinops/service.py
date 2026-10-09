@@ -13,7 +13,7 @@ from typing import Any
 from .config import Settings
 from .engine import new_incident_id, pick_fault
 from .harness import FAULT_INFO, ModelDemoNetwork
-from .orchestrator import IncidentSession, decide, run_incident
+from .orchestrator import IncidentSession, decide, qa_context, run_incident
 from .planner.factory import build_planner
 from .topology import build_topology
 from .twin import ModelTwin
@@ -139,6 +139,14 @@ class Registry:
         if live.session.status != "awaiting_approval":
             raise ValueError("drift can only be simulated while awaiting approval")
         await live.session.demo.simulate_drift()
+
+    async def ask(self, live: LiveIncident, question: str) -> dict[str, Any]:
+        planner = live.session.planner
+        if not hasattr(planner, "answer"):
+            raise ValueError("Ask TwinOps needs an LLM planner (configure Gemini, Ollama or an OpenAI-compatible endpoint)")
+        if not live.session.run:
+            raise ValueError("questions open once the verdict is in")
+        return await planner.answer(question, qa_context(live.session.run, live.session.outcome))
 
     def reveal(self, live: LiveIncident) -> dict[str, str]:
         if live.session.status == "running":

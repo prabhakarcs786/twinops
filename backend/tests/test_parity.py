@@ -7,7 +7,7 @@ import pytest
 from twinops.engine import run_model
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "ts_parity.json").read_text())
-PLANNER_ONLY_KINDS = {"planner_note", "narrative"}
+PLANNER_ONLY_KINDS = {"planner_note", "narrative", "model_call"}
 
 
 @pytest.mark.parametrize("case", FIXTURE, ids=lambda c: f"{c['pack']}-{c['fault']}-{c['seed']}")
