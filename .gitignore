@@ -30,5 +30,13 @@ credentials.json
 /logs/
 /dist/
 /build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+.local/
+test-results/
+playwright-report/
 ### Telekom local runtime and context ###
 .telekom/
