@@ -153,7 +153,7 @@ export interface ActionStep {
   params: Record<string, ParamValue>;
 }
 
-export type CandidateOrigin = 'runbook' | 'revision' | 'evaluation_case';
+export type CandidateOrigin = 'runbook' | 'llm' | 'revision' | 'evaluation_case';
 
 export interface ChangeSet {
   id: string;
@@ -261,7 +261,10 @@ export type EventKind =
   | 'drift_detected'
   | 'applied'
   | 'post_check'
-  | 'rolled_back';
+  | 'rolled_back'
+  | 'planner_note'
+  | 'narrative'
+  | 'run_failed';
 
 export interface CandidateSummary {
   id: string;

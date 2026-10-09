@@ -2,22 +2,29 @@ import { ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { StatusChip } from '../components/StatusChip.tsx';
 import { describeStep } from '../engine/catalogue.ts';
-import { VERDICT_LABEL, type IncidentSession } from '../engine/orchestrator.ts';
+import { VERDICT_LABEL } from '../engine/orchestrator.ts';
 import { shortHash } from '../engine/sha256.ts';
+import type { RunView } from './runView.ts';
 
 interface Props {
   open: boolean;
-  session: IncidentSession;
+  view: RunView;
+  /** Backend requires an operator passcode (server-side token check). */
+  requirePasscode?: boolean;
+  busy?: boolean;
+  error?: string | null;
+  targetLabel?: string;
   onClose: () => void;
-  onDecide: (operator: string, comment: string, decision: 'approve' | 'reject') => void;
+  onDecide: (operator: string, comment: string, decision: 'approve' | 'reject', passcode: string) => void;
 }
 
-export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
+export function ApprovalDialog({ open, view, requirePasscode = false, busy = false, error = null, targetLabel = 'demo network only', onClose, onDecide }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [operator, setOperator] = useState('');
   const [comment, setComment] = useState('');
+  const [passcode, setPasscode] = useState('');
   const [ack, setAck] = useState(false);
-  const selected = session.run.selected!;
+  const selected = view.run.selected!;
 
   useEffect(() => {
     const dialog = ref.current;
@@ -26,10 +33,11 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
+  const missing = !operator.trim() || (requirePasscode && !passcode) || busy;
   const submit = (decision: 'approve' | 'reject') => (e?: FormEvent) => {
     e?.preventDefault();
-    if (!operator.trim() || (decision === 'approve' && !ack)) return;
-    onDecide(operator.trim(), comment.trim(), decision);
+    if (missing || (decision === 'approve' && !ack)) return;
+    onDecide(operator.trim(), comment.trim(), decision, passcode);
   };
 
   return (
@@ -48,7 +56,7 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
         <div className="approval-grid">
           <div>
             <p className="approval-verdict">
-              <StatusChip tone={session.run.verdict === 'PASS_UNDER_DEFINED_TESTS' ? 'ok' : 'warn'}>{VERDICT_LABEL[session.run.verdict]}</StatusChip>
+              <StatusChip tone={view.run.verdict === 'PASS_UNDER_DEFINED_TESTS' ? 'ok' : 'warn'}>{VERDICT_LABEL[view.run.verdict]}</StatusChip>
             </p>
             <p className="approval-change">{selected.change.label}</p>
             <ul className="approval-steps">
@@ -68,7 +76,7 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
               <div>
                 <dt>Target state</dt>
                 <dd>
-                  <code>{shortHash(session.run.snapshotHash)}</code>
+                  <code>{shortHash(view.run.snapshotHash)}</code>
                 </dd>
               </div>
               <div>
@@ -77,7 +85,7 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
               </div>
               <div>
                 <dt>Target</dt>
-                <dd>demo network only</dd>
+                <dd>{targetLabel}</dd>
               </div>
             </dl>
             {selected.gates.some((g) => g.status === 'warn') && (
@@ -89,7 +97,7 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
           <div>
             <h3>Not tested — read before approving</h3>
             <ul className="untested">
-              {session.run.untested.map((u) => (
+              {view.run.untested.map((u) => (
                 <li key={u}>{u}</li>
               ))}
             </ul>
@@ -105,18 +113,29 @@ export function ApprovalDialog({ open, session, onClose, onDecide }: Props) {
             <span>Comment (optional)</span>
             <input value={comment} onChange={(e) => setComment(e.target.value)} autoComplete="off" placeholder="Reviewed diff, rollback and untested conditions" />
           </label>
+          {requirePasscode && (
+            <label>
+              <span>Operator passcode</span>
+              <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} required autoComplete="off" />
+            </label>
+          )}
           <label className="check">
             <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
             <span>I reviewed the evidence and the untested conditions. Approval binds to this hash and target state only.</span>
           </label>
+          {error && (
+            <p className="approval-error" role="alert">
+              {error}
+            </p>
+          )}
         </div>
 
         <footer>
-          <button type="button" className="btn btn-ghost" onClick={submit('reject')} disabled={!operator.trim()}>
+          <button type="button" className="btn btn-ghost" onClick={submit('reject')} disabled={missing}>
             Reject change
           </button>
-          <button type="submit" className="btn btn-primary" disabled={!operator.trim() || !ack}>
-            <ShieldCheck size={16} aria-hidden="true" /> Approve &amp; apply to demo lab
+          <button type="submit" className="btn btn-primary" disabled={missing || !ack}>
+            <ShieldCheck size={16} aria-hidden="true" /> {busy ? 'Applying…' : 'Approve & apply to demo lab'}
           </button>
         </footer>
       </form>

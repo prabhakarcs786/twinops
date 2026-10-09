@@ -1,0 +1,40 @@
+[project]
+name = "twinops"
+version = "0.2.0"
+description = "TwinOps backend: incident orchestration, twin experiments, Proof Gate and approval-bound apply."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.143.0",
+  "uvicorn==0.54.0",
+  "pydantic==2.14.0",
+  "httpx==0.28.1",
+  "google-genai==2.29.0",
+  "cryptography==50.0.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.10"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["twinops*"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101", "S603", "S607", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B", "ASYNC109"]
+# Lab timeouts bound docker subprocesses (killed on expiry) and polling deadlines; caller-side asyncio.timeout would orphan the child.
+"twinops/lab/*" = ["ASYNC109"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

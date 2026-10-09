@@ -93,9 +93,16 @@ export interface Experiment {
   fixed: ProbeResult[];
   restored: boolean;
   regressions: ProbeResult[];
+  /** Pre-change latency of each regressed probe, so a latency regression is reported as such. */
+  regressionBaselines: Record<string, number | undefined>;
   latencyDeltaMs: number;
   forbidden: string[];
   rollback: { rehearsed: boolean; matches: boolean; restoredHash: string };
+}
+
+/** A probe that still succeeds but got slower is a latency regression; say so instead of quoting its success detail. */
+function regressionText(p: ProbeResult, baselineMs: number | undefined): string {
+  return p.ok && baselineMs !== undefined ? `${p.id} latency regression: ${p.latencyMs} ms vs ${baselineMs} ms before the change` : `${p.id} ${p.detail}`;
 }
 
 export function runExperiment(ctx: TwinContext, change: ChangeSet): Experiment {
@@ -110,6 +117,7 @@ export function runExperiment(ctx: TwinContext, change: ChangeSet): Experiment {
     const before = ctx.obs.probes.find((o) => o.id === p.id);
     return p.kind === 'journey' && before?.latencyMs !== undefined && (p.latencyMs ?? 0) - before.latencyMs > 5;
   });
+  const regressionBaselines = Object.fromEntries(regressions.map((p) => [p.id, ctx.obs.probes.find((o) => o.id === p.id)?.latencyMs]));
   const deltas = affectedIds.map((id) => (fixed.find((p) => p.id === id)?.latencyMs ?? 0) - (obs.baselines[id] ?? 0));
   const latencyDeltaMs = restored && deltas.length ? Math.round(Math.max(...deltas) * 10) / 10 : 0;
 
@@ -129,6 +137,7 @@ export function runExperiment(ctx: TwinContext, change: ChangeSet): Experiment {
     fixed,
     restored,
     regressions,
+    regressionBaselines,
     latencyDeltaMs,
     forbidden: errors.length ? [] : forbiddenReasons(change),
     rollback: { rehearsed: errors.length === 0, matches: restoredHash === hashOf(captured), restoredHash },
@@ -208,7 +217,7 @@ export function evaluateGates(repro: Reproduction, exp: Experiment, challenges: 
   add(
     exp.regressions.length === 0
       ? { id: 'G3', status: 'pass', reason: 'unaffected journeys, negative tests and positive control unchanged' }
-      : { id: 'G3', status: 'fail', reason: exp.regressions.map((p) => `${p.id} ${p.detail}`).join('; ') },
+      : { id: 'G3', status: 'fail', reason: exp.regressions.map((p) => regressionText(p, exp.regressionBaselines[p.id])).join('; ') },
   );
 
   if (!challenges) add({ id: 'G4', status: 'skip', reason: 'not attacked — an earlier gate already failed' });

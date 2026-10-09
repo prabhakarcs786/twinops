@@ -73,7 +73,7 @@ export interface RunResult {
 }
 
 export interface ApplyOutcome {
-  status: 'applied' | 'rolled_back' | 'refused' | 'rejected_by_operator';
+  status: 'applied' | 'rolled_back' | 'refused' | 'rejected_by_operator' | 'expired';
   reason: string;
   postChecks: ProbeResult[];
 }

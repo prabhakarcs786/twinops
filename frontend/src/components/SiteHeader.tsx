@@ -36,6 +36,9 @@ export function SiteHeader({ variant, theme, onToggleTheme }: Props) {
                 {item.label}
               </a>
             ))}
+            <Link to="/deck" onClick={() => setOpen(false)}>
+              Deck
+            </Link>
           </nav>
         )}
         {variant === 'app' && <span className="app-crumb">Workbench</span>}

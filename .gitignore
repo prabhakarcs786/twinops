@@ -31,6 +31,7 @@ credentials.json
 /dist/
 /build/
 .venv/
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 node_modules/
@@ -38,5 +39,9 @@ frontend/dist/
 .local/
 test-results/
 playwright-report/
+### Lab runtime (generated configs and the lab CA private key) and local evidence store ###
+lab/runtime/
+lab/.feasibility/
+backend/.data/
 ### Telekom local runtime and context ###
 .telekom/

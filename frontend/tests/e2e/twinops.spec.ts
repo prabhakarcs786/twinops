@@ -80,3 +80,17 @@ test('keyboard users can operate the evidence tabs', async ({ page }) => {
   await expect(page.getByRole('tab', { name: 'Proof Gate' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tabpanel')).toContainText('G5');
 });
+
+test('pitch deck navigates by keyboard and every slide passes accessibility checks', async ({ page }) => {
+  await page.goto('/deck');
+  await expect(page.getByRole('region', { name: /^1 of 10/ })).toBeVisible();
+  for (let i = 1; i <= 10; i++) {
+    await expect(page.getByRole('region', { name: new RegExp(`^${i} of 10`) })).toBeVisible();
+    await expect(page.getByRole('region', { name: / of 10: / })).toHaveCount(1);
+    await expectNoA11yViolations(page);
+    await page.keyboard.press('ArrowRight');
+  }
+  await expect(page).toHaveURL(/#10$/);
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('region', { name: /^1 of 10/ })).toBeVisible();
+});

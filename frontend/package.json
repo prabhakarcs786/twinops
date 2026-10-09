@@ -14,6 +14,8 @@
     "lint": "eslint .",
     "test:engine": "node --test tests/engine/*.test.ts",
     "test:e2e": "playwright test",
+    "test:live": "playwright test -c playwright.live.config.ts",
+    "export:deck": "node scripts/export-deck.mjs",
     "test": "npm run test:engine && npm run test:e2e"
   },
   "dependencies": {

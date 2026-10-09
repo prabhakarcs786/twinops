@@ -1,0 +1,267 @@
+"""FastAPI application: incident API with SSE streaming, Proof Pack export and the built frontend."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import hmac
+import json
+import time
+from collections import defaultdict, deque
+from collections.abc import AsyncIterator
+from typing import Any, Literal
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
+
+from . import __version__
+from .config import Settings
+from .harness import ALL_FAULTS, FAULT_INFO, SUPPORTED_FAULTS
+from .proofpack import build_proof_pack, proof_pack_html
+from .service import BusyError, LiveIncident, Registry
+from .topology import PACKS
+
+FaultChoice = Literal["random", "route_misconfig", "dns_failure", "cert_expiry", "unsupported_link_flap"]
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+       "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+
+
+class IncidentRequest(BaseModel):
+    pack: Literal["core", "enterprise"] = "core"
+    fault: FaultChoice = "random"
+    seed: int | None = Field(default=None, ge=0, le=1_000_000)
+    pace: float = Field(default=1.0, ge=0, le=8)
+    includeEvaluationCase: bool = True
+
+
+class DecisionRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    operator: str = Field(min_length=2, max_length=64, pattern=r"^[A-Za-z0-9._@-]+$")
+    comment: str = Field(default="", max_length=500)
+
+
+class RateLimiter:
+    def __init__(self, per_minute: int) -> None:
+        self.per_minute = per_minute
+        self.hits: dict[str, deque[float]] = defaultdict(deque)
+
+    def check(self, key: str) -> None:
+        now = time.monotonic()
+        q = self.hits[key]
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= self.per_minute:
+            raise HTTPException(429, "rate limit: too many incidents started from this client, wait a minute")
+        q.append(now)
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings()
+    registry = Registry(settings)
+    limiter = RateLimiter(settings.rate_limit_per_min)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await registry.shutdown()
+
+    app = FastAPI(title="TwinOps", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None, lifespan=lifespan)
+    app.state.registry = registry
+    app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID"])
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):  # noqa: ANN001, ANN202
+        response: Response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", CSP)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        if request.headers.get("x-forwarded-proto") == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    def get_live(incident_id: str) -> LiveIncident:
+        live = registry.incidents.get(incident_id)
+        if live is None:
+            raise HTTPException(404, "unknown incident")
+        return live
+
+    def operator_auth(authorization: str | None = Header(default=None)) -> None:
+        token = settings.operator_token
+        if token is None:
+            return
+        supplied = (authorization or "").removeprefix("Bearer ").strip()
+        if not supplied or not hmac.compare_digest(supplied, token):
+            raise HTTPException(401, "operator passcode required", headers={"WWW-Authenticate": "Bearer"})
+
+    def planner_info() -> dict[str, Any]:
+        from .planner.factory import build_planner
+
+        try:
+            p = build_planner(settings=settings)
+            return {"kind": p.kind, "provider": getattr(p, "provider", "none"), "model": getattr(p, "model", "none"), "mode": p.mode, "version": p.version}
+        except RuntimeError as exc:
+            return {"kind": "unavailable", "provider": "none", "model": "none", "mode": str(exc), "version": ""}
+
+    @app.get("/api/health")
+    async def health() -> dict[str, Any]:
+        return {"status": "ok", "version": __version__}
+
+    @app.get("/api/config")
+    async def config() -> dict[str, Any]:
+        twin: dict[str, Any] = {"backend": settings.twin, "ready": True, "detail": "in-process model twin"}
+        if settings.twin == "emulated":
+            from .lab.backend import lab_status
+
+            twin = await lab_status(settings)
+        return {
+            "version": __version__,
+            "planner": planner_info(),
+            "twin": twin,
+            "packs": [{"id": k, "name": v["name"]} for k, v in PACKS.items()],
+            "faults": [{"id": f, **FAULT_INFO[f], "supported": f in SUPPORTED_FAULTS} for f in ALL_FAULTS],
+            "approvalAuth": settings.operator_token is not None,
+            "harness": settings.harness_enabled,
+            "activeRuns": registry.active(),
+        }
+
+    @app.post("/api/incidents", status_code=202)
+    async def create_incident(body: IncidentRequest, request: Request) -> dict[str, Any]:
+        limiter.check(request.client.host if request.client else "unknown")
+        try:
+            live = await registry.create(body.pack, body.fault, body.seed, body.pace, body.includeEvaluationCase)
+        except BusyError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        iid = live.session.incident_id
+        return {"incidentId": iid, "seed": live.seed, "eventsUrl": f"/api/incidents/{iid}/events"}
+
+    @app.get("/api/incidents/{incident_id}")
+    async def get_incident(incident_id: str) -> dict[str, Any]:
+        live = get_live(incident_id)
+        s = live.session
+        return {"incidentId": s.incident_id, "status": s.status, "seed": live.seed, "run": s.run or None, "approval": s.approval, "outcome": s.outcome,
+                "narrative": s.narrative, "events": len(s.events), "error": live.error}
+
+    @app.get("/api/incidents/{incident_id}/events")
+    async def events(incident_id: str, request: Request, follow: bool = True, last_event_id: str | None = Header(default=None)) -> StreamingResponse:
+        live = get_live(incident_id)
+        start = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
+
+        async def stream() -> AsyncIterator[str]:
+            sent = start
+            yield "retry: 3000\n\n"
+            while True:
+                evs = live.session.events
+                while sent < len(evs):
+                    event = evs[sent]
+                    sent += 1
+                    yield f"id: {sent}\nevent: run\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if not follow or (live.finished and sent >= len(live.session.events)):
+                    yield f"event: end\ndata: {json.dumps({'status': live.session.status})}\n\n"
+                    return
+                if await request.is_disconnected():
+                    return
+                async with live.changed:
+                    try:
+                        await asyncio.wait_for(live.changed.wait_for(lambda s=sent: len(live.session.events) > s or live.finished), 15)
+                    except TimeoutError:
+                        yield ": keep-alive\n\n"
+
+        return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/api/incidents/{incident_id}/decision", status_code=202, dependencies=[Depends(operator_auth)])
+    async def decision(incident_id: str, body: DecisionRequest) -> dict[str, Any]:
+        live = get_live(incident_id)
+        try:
+            await registry.decide(live, body.operator, body.comment, body.decision)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"status": live.session.status, "outcome": live.session.outcome}
+
+    @app.post("/api/incidents/{incident_id}/drift", status_code=202, dependencies=[Depends(operator_auth)])
+    async def drift(incident_id: str) -> dict[str, str]:
+        if not settings.harness_enabled:
+            raise HTTPException(403, "demo harness disabled")
+        live = get_live(incident_id)
+        try:
+            await registry.drift(live)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"status": "drift injected by demo harness"}
+
+    @app.get("/api/incidents/{incident_id}/reveal")
+    async def reveal(incident_id: str) -> dict[str, str]:
+        try:
+            return registry.reveal(get_live(incident_id))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/incidents/{incident_id}/proof-pack", response_model=None)
+    async def proof_pack(incident_id: str, format: Literal["json", "html"] = "json") -> Response:  # noqa: A002
+        live = get_live(incident_id)
+        if not live.session.run:
+            raise HTTPException(409, "the Proof Pack is available at the verdict")
+        pack = build_proof_pack(live.session)
+        name = f"{incident_id}-proof-pack.{format}"
+        disposition = {"Content-Disposition": f'attachment; filename="{name}"'}
+        if format == "html":
+            return HTMLResponse(proof_pack_html(pack), headers={**disposition, "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
+        return JSONResponse(pack, headers=disposition)
+
+    @app.get("/api/evaluation/reports")
+    async def reports() -> list[dict[str, Any]]:
+        folder = settings.data_dir / "reports"
+        out = []
+        for path in sorted(folder.glob("*.json"), reverse=True)[:20] if folder.exists() else []:
+            with contextlib.suppress(ValueError, KeyError):
+                data = json.loads(path.read_text())
+                out.append({"name": path.stem, "generatedAt": data["generatedAt"], "planner": data["planner"], "seeds": data["seeds"],
+                            "byFault": data["byFault"], "controls": data["controls"]})
+        return out
+
+    static_dir = settings.static_dir
+    if static_dir and static_dir.is_dir():
+        root = static_dir.resolve()
+        index = root / "index.html"
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa(path: str) -> Response:
+            if path.startswith("api/"):
+                raise HTTPException(404)
+            candidate = (root / path).resolve()
+            if path and candidate.is_file() and candidate.is_relative_to(root):
+                cache = "public, max-age=31536000, immutable" if path.startswith("assets/") else "no-cache"
+                return FileResponse(candidate, headers={"Cache-Control": cache})
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+    return app
+
+
+app = create_app()
+
+
+def run() -> None:
+    import os
+    from pathlib import Path
+
+    import uvicorn
+
+    from .config import load_env_file
+
+    load_env_file()
+    options: dict[str, Any] = {"host": os.environ.get("HOST", "127.0.0.1"), "port": int(os.environ.get("PORT", "8000")), "proxy_headers": True,
+                               "forwarded_allow_ips": "*", "timeout_graceful_shutdown": 5}
+    if os.environ.get("TWINOPS_RELOAD", "").lower() in ("1", "true", "yes"):
+        # The reload worker re-imports this module; .env values reach it through the inherited environment.
+        uvicorn.run("twinops.api:app", reload=True, reload_dirs=[str(Path(__file__).resolve().parent)], **options)
+    else:
+        uvicorn.run(create_app(), **options)
+
+
+if __name__ == "__main__":
+    run()

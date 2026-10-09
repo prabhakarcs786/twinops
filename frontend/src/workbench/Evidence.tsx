@@ -2,10 +2,10 @@ import { Download, FileCode2, FileText } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { describeStep } from '../engine/catalogue.ts';
-import { buildProofPack, VERDICT_LABEL, type IncidentSession } from '../engine/orchestrator.ts';
+import { VERDICT_LABEL } from '../engine/orchestrator.ts';
 import { shortHash } from '../engine/sha256.ts';
 import type { Frame, GateCheck, GateStatus } from '../engine/types.ts';
-import { download, proofPackHtml } from './proofPackHtml.ts';
+import type { RunView } from './runView.ts';
 
 const GATE_NAMES: Record<string, string> = {
   G1: 'Reproduced in twin',
@@ -29,7 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 interface Props {
-  session: IncidentSession | null;
+  view: RunView | null;
   frame: Frame;
   inspectId: string | null;
   onInspect: (id: string) => void;
@@ -37,18 +37,18 @@ interface Props {
   decisionVisible: boolean;
 }
 
-export function Evidence({ session, frame, inspectId, onInspect, verdictVisible, decisionVisible }: Props) {
+export function Evidence({ view, frame, inspectId, onInspect, verdictVisible, decisionVisible }: Props) {
   const [tab, setTab] = useState<Tab>('hypotheses');
   const refs = useRef<Record<Tab, HTMLButtonElement | null>>({ hypotheses: null, gate: null, diff: null, pack: null });
 
   const decided = frame.candidates.filter((c) => ['pass', 'warn', 'rejected', 'superseded'].includes(c.status));
   const activeId = inspectId && decided.some((c) => c.id === inspectId) ? inspectId : (frame.selectedId ?? decided.at(-1)?.id ?? null);
-  const record = session?.run.candidates.find((c) => c.change.id === activeId);
-  const approval = decisionVisible && record && record === session?.run.selected ? session?.approval : undefined;
+  const record = view?.run.candidates.find((c) => c.change.id === activeId);
+  const approval = decisionVisible && record && record.change.id === view?.run.selected?.change.id ? view?.approval : undefined;
   const gates = record?.gates.map((g): GateCheck => {
-    if (g.id !== 'G8' || !approval || !session?.outcome) return g;
+    if (g.id !== 'G8' || !approval || !view?.outcome) return g;
     if (approval.decision === 'reject') return { ...g, status: 'fail', reason: `rejected by ${approval.operator}` };
-    if (session.outcome.status === 'refused') return { ...g, status: 'fail', reason: session.outcome.reason };
+    if (view.outcome.status === 'refused') return { ...g, status: 'fail', reason: view.outcome.reason };
     return { ...g, status: 'pass', reason: `approved by ${approval.operator} · token ${shortHash(approval.token)}` };
   });
 
@@ -197,23 +197,23 @@ export function Evidence({ session, frame, inspectId, onInspect, verdictVisible,
           ))}
 
         {tab === 'pack' &&
-          (session && verdictVisible ? (
+          (view && verdictVisible ? (
             <div className="pack">
               <p>
-                <strong>{VERDICT_LABEL[session.run.verdict]}</strong> · {session.run.runId} · {session.run.mode}
+                <strong>{VERDICT_LABEL[view.run.verdict]}</strong> · {view.run.runId} · {view.run.mode}
               </p>
-              <p className="muted">Verified under tested scenarios only. Evidence from a synthetic model twin is not a guarantee of production safety.</p>
+              <p className="muted">Verified under tested scenarios only. Twin evidence is not a guarantee of production safety.</p>
               <h3>Untested conditions</h3>
               <ul className="untested">
-                {session.run.untested.map((u) => (
+                {view.run.untested.map((u) => (
                   <li key={u}>{u}</li>
                 ))}
               </ul>
               <div className="pack-actions">
-                <button type="button" className="btn btn-ghost" onClick={() => download(`${session.run.runId}-proof-pack.json`, JSON.stringify(buildProofPack(session), null, 2), 'application/json')}>
+                <button type="button" className="btn btn-ghost" onClick={view.downloadJson}>
                   <FileCode2 size={16} aria-hidden="true" /> Download JSON
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => download(`${session.run.runId}-proof-pack.html`, proofPackHtml(buildProofPack(session)), 'text/html')}>
+                <button type="button" className="btn btn-ghost" onClick={view.downloadHtml}>
                   <FileText size={16} aria-hidden="true" /> Download HTML report
                 </button>
               </div>
