@@ -482,6 +482,24 @@
   font-size: clamp(1.02rem, 1.3vw, 1.15rem);
   color: var(--text-2);
 }
+@media (min-width: 1100px) {
+  .section-head:has(> .lead) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    column-gap: clamp(3rem, 6vw, 6rem);
+    max-width: none;
+  }
+  .section-head:has(> .lead) > :not(.lead) {
+    grid-column: 1;
+  }
+  .section-head:has(> .lead) > .lead {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: end;
+    margin-top: 0;
+    padding-bottom: 0.4rem;
+  }
+}
 
 .glass-card,
 .fix,

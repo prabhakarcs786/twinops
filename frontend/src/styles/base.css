@@ -27,7 +27,7 @@
   --radius-sm: 12px;
   --font: 'Manrope Variable', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --container: 1240px;
+  --container: 1320px;
   --header-h: 68px;
   --ease: cubic-bezier(0.2, 0.75, 0.2, 1);
   color-scheme: dark;
@@ -156,7 +156,8 @@ main:focus {
   white-space: nowrap;
   border: 0;
 }
-.container {
+.container,
+.site-header.is-site .site-header-inner {
   width: min(var(--container), 100% - 2 * clamp(1rem, 4vw, 2.5rem));
   margin-inline: auto;
 }
@@ -392,6 +393,7 @@ main:focus {
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--text-2);
   transition: color 0.2s, background 0.2s;
 }
@@ -412,10 +414,13 @@ main:focus {
   display: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1200px) {
   .brand-tag {
     display: none;
   }
+}
+
+@media (max-width: 1080px) {
   .nav-toggle {
     display: inline-grid;
   }
@@ -438,6 +443,9 @@ main:focus {
   .site-nav a {
     padding: 0.8rem 1rem;
   }
+}
+
+@media (max-width: 960px) {
   .site-actions .btn-sm {
     display: none;
   }
