@@ -68,7 +68,10 @@ class LabInstance:
     async def push(self, state: State, prev: State | None, *, restart: list[str] | None = None) -> None:
         """Brings devices to `state` with minimal changes from `prev` (full push when prev is None)."""
         jobs = [self._push_routing(state, prev), self._push_dns(state, prev), self._push_tls(state, prev)]
-        await asyncio.gather(*jobs)
+        results = await asyncio.gather(*jobs, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
         for target in restart or []:
             if target == "B17":
                 await self.vtysh("clear bgp *")

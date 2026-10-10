@@ -262,6 +262,7 @@ export type EventKind =
   | 'applied'
   | 'post_check'
   | 'rolled_back'
+  | 'recovery_required'
   | 'planner_note'
   | 'model_call'
   | 'narrative'

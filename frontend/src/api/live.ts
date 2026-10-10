@@ -27,7 +27,22 @@ export interface LiveIncident {
   outcome: ApplyOutcome | null;
   narrative: Narrative | null;
   error: string | null;
+  createdAt: number;
+  recovered: boolean;
+  pack: PackId;
 }
+
+export interface IncidentSummary {
+  incidentId: string;
+  createdAt: number;
+  seed: number;
+  status: string;
+  pack: PackId;
+  verdict: string | null;
+  outcome: string | null;
+}
+
+export const fetchHistory = () => json<IncidentSummary[]>('/api/incidents');
 
 const API = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
@@ -58,7 +73,7 @@ export async function fetchConfig(timeoutMs = 1500): Promise<BackendConfig | nul
 }
 
 export const createIncident = (body: { pack: PackId; fault: 'random' | FaultId; pace: number }) =>
-  json<{ incidentId: string; seed: number; eventsUrl: string }>('/api/incidents', { method: 'POST', body: JSON.stringify(body) });
+  json<{ incidentId: string; seed: number; eventsUrl: string; createdAt: number }>('/api/incidents', { method: 'POST', body: JSON.stringify(body) });
 
 export const getIncident = (id: string) => json<LiveIncident>(`/api/incidents/${encodeURIComponent(id)}`);
 
@@ -94,22 +109,31 @@ export interface EvaluationReport {
   generatedAt: string;
   planner: { kind: string; provider: string; model: string; version: string };
   seeds: number;
-  byFault: Record<string, { runs: number; top1: number; top3: number; verdictOk: number; unsafePassed: number; fallbacks: number; rejectedOutputs: number; modelCalls: number; tokens: number; medianComputeMs: number }>;
-  controls: { id: string; ok: boolean }[];
+  pack: string;
+  startSeed: number;
+  suiteVersion: string;
+  note: string;
+  byFault: Record<string, { runs: number; top1: number; top3: number; verdictOk: number; fallbackFreeSuccess?: number; abstentions?: number; unsafePassed: number; fallbacks: number; rejectedOutputs: number; modelCalls: number; tokens: number; medianComputeMs: number }>;
+  controls: { id: string; name?: string; ok: boolean; scope?: string; fallbacks?: number; modelCalls?: number; planner?: { kind: string; provider: string; model: string } }[];
 }
 
 export const fetchReports = () => json<EvaluationReport[]>('/api/evaluation/reports');
 
 /** Subscribes to the incident's SSE stream; EventSource reconnects automatically with Last-Event-ID. */
-export function subscribe(eventsUrl: string, onEvent: (e: RunEvent) => void, onEnd: (status: string) => void, onError: () => void): () => void {
+export type StreamState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
+
+export function subscribe(eventsUrl: string, onEvent: (e: RunEvent) => void, onEnd: (status: string) => void, onState: (state: StreamState) => void): () => void {
   const source = new EventSource(`${API}${eventsUrl}`);
+  onState('connecting');
+  source.onopen = () => onState('connected');
   source.addEventListener('run', (msg) => onEvent(JSON.parse((msg as MessageEvent<string>).data) as RunEvent));
   source.addEventListener('end', (msg) => {
     onEnd((JSON.parse((msg as MessageEvent<string>).data) as { status: string }).status);
     source.close();
+    onState('closed');
   });
   source.onerror = () => {
-    if (source.readyState === EventSource.CLOSED) onError();
+    onState(source.readyState === EventSource.CLOSED ? 'closed' : 'reconnecting');
   };
   return () => source.close();
 }

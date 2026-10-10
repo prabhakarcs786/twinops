@@ -1,6 +1,6 @@
 import { Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
-import { createIncident as createLiveIncident, fetchConfig, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident } from '../api/live.ts';
+import { createIncident as createLiveIncident, fetchConfig, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident, type StreamState } from '../api/live.ts';
 import { SiteHeader } from '../components/SiteHeader.tsx';
 import { StatusChip } from '../components/StatusChip.tsx';
 import { FAULT_INFO, SUPPORTED_FAULTS } from '../engine/harness.ts';
@@ -11,14 +11,17 @@ import type { FaultId, PackId, Phase, RunEvent } from '../engine/types.ts';
 import { useReducedMotion } from '../lib/hooks.ts';
 import { ApprovalDialog } from './ApprovalDialog.tsx';
 import { ModelThinking } from './AiTrace.tsx';
+import { CandidateComparison, EvidenceReplay, ImpactSummary } from './DecisionEvidence.tsx';
+import { IncidentHistory } from './IncidentHistory.tsx';
+import { BenchmarkPanel } from './BenchmarkPanel.tsx';
 import { Evidence, type AskTarget, type EvidenceTab } from './Evidence.tsx';
 import { CandidateBoard, Counters, PhaseStepper, Stage, Timeline } from './panels.tsx';
 import { liveView, localView, type RunView } from './runView.ts';
 import { fmtClock, usePlayback } from './usePlayback.ts';
 
 const SPEEDS = [0.5, 1, 2, 4];
-const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed']);
-const OUTCOME_KINDS = new Set(['post_check', 'rolled_back', 'drift_detected', 'approval_rejected']);
+const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed', 'recovery_required']);
+const OUTCOME_KINDS = new Set(['post_check', 'rolled_back', 'drift_detected', 'approval_rejected', 'recovery_required']);
 
 function readParams() {
   const p = new URLSearchParams(window.location.search);
@@ -28,7 +31,9 @@ function readParams() {
     fault: fault && fault in FAULT_INFO ? fault : 'random',
     autostart: p.get('autostart') === '1',
     pack: (p.get('pack') === 'enterprise' ? 'enterprise' : 'core') as PackId,
-    engine: p.get('engine') === 'local' ? 'local' : 'live',
+    engine: p.get('incident') ? 'live' : p.get('engine') === 'local' ? 'local' : 'live',
+    incident: p.get('incident'),
+    presentation: p.get('view') === 'presentation',
   } as const;
 }
 
@@ -54,6 +59,7 @@ interface LiveRun {
   events: RunEvent[];
   detail: LiveIncident | null;
   ended: boolean;
+  createdAt: number;
 }
 
 type Incident = LocalIncident | LiveRun;
@@ -77,6 +83,11 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const [enginePref, setEnginePref] = useState<'live' | 'local'>(params.engine);
   const [incident, setIncident] = useState<Incident | null>(null);
   const [starting, setStarting] = useState(false);
+  const [presentation, setPresentation] = useState(params.presentation);
+  const [streamState, setStreamState] = useState<StreamState>('closed');
+  const [streamAttempt, setStreamAttempt] = useState(0);
+  const [now, setNow] = useState(Date.now);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [reveal, setReveal] = useState(false);
   const [revealed, setRevealed] = useState<{ code: string; label: string } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -103,7 +114,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const seen = new Set<Phase>(visible.map((e) => e.phase));
   const verdictEvent = visible.find((e) => e.kind === 'gate_verdict');
   const failedEvent = live ? visible.find((e) => e.kind === 'run_failed') : undefined;
-  const wall = live ? (current?.at ?? 0) : playback.wall;
+  const wall = live ? Math.max(current?.at ?? 0, !verdictEvent && !failedEvent && !live.ended ? now - live.createdAt * 1000 : 0) : playback.wall;
   const verdictWall = verdictEvent ? (live ? verdictEvent.at : (playback.marks[verdictEvent.seq] ?? wall)) : null;
 
   const view: RunView | null = local
@@ -115,9 +126,57 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const liveOutcomeVisible = Boolean(live?.ended) || (current ? OUTCOME_KINDS.has(current.kind) : false);
   const outcome = local ? (session?.outcome && playback.done ? session.outcome : undefined) : liveOutcomeVisible ? (live?.detail?.outcome ?? undefined) : undefined;
   const decided = visible.some((e) => e.kind === 'approval_recorded' || e.kind === 'applied' || OUTCOME_KINDS.has(e.kind));
-  const awaiting = visible.some((e) => e.kind === 'awaiting_approval') && !decided && !view?.outcome && !outcome;
+  const awaiting = visible.some((e) => e.kind === 'awaiting_approval') && !decided && !view?.outcome && !outcome && !live?.detail?.recovered;
   const running = local ? !playback.done : live ? !verdictEvent && !failedEvent && !live.ended : starting;
   const hasRun = Boolean(incident);
+
+  const ticking = Boolean(live && running);
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [ticking]);
+
+  const rememberIncident = (id: string | null) => {
+    const url = new URL(window.location.href);
+    if (id) { url.searchParams.set('incident', id); url.searchParams.delete('autostart'); }
+    else url.searchParams.delete('incident');
+    window.history.replaceState(null, '', url);
+  };
+
+  const clearRunState = () => {
+    reset();
+    setReveal(false);
+    setRevealed(null);
+    setInspectId(null);
+    setDrifted(false);
+    setDecisionError(null);
+    setDialogOpen(false);
+    setResumeError(null);
+  };
+
+  const resumeIncident = async (id: string) => {
+    setStarting(true);
+    setResumeError(null);
+    setIncident(null);
+    clearRunState();
+    try {
+      const detail = await getIncident(id);
+      setPack(detail.pack);
+      setEnginePref('live');
+      setIncident({ kind: 'live', id, eventsUrl: `/api/incidents/${encodeURIComponent(id)}/events`, seed: detail.seed,
+        events: [], detail, ended: false, createdAt: detail.createdAt });
+      rememberIncident(id);
+    } catch (err) { setResumeError(`Could not resume this incident — ${errorText(err)}`); }
+    finally { setStarting(false); }
+  };
+  const initialResume = useEffectEvent(() => { if (params.incident) void resumeIncident(params.incident); });
+  useEffect(() => {
+    if (!params.incident || backend === undefined) return;
+    const timer = window.setTimeout(() => initialResume(), 0);
+    return () => window.clearTimeout(timer);
+  }, [params.incident, backend]);
+
 
   // Probe for a backend once; without one the workbench runs the in-browser engine.
   useEffect(() => {
@@ -139,9 +198,9 @@ export function Workbench({ theme, onToggleTheme }: Props) {
       liveUrl,
       (e) => setIncident((cur) => (cur?.kind === 'live' && cur.id === liveId && !cur.events.some((x) => x.seq === e.seq) ? { ...cur, events: [...cur.events, e] } : cur)),
       () => setIncident((cur) => (cur?.kind === 'live' && cur.id === liveId ? { ...cur, ended: true } : cur)),
-      () => setToast('Lost the event stream from the backend.'),
+      setStreamState,
     );
-  }, [liveId, liveUrl]);
+  }, [liveId, liveUrl, streamAttempt]);
 
   // After the verdict, refresh the authoritative run record whenever new events arrive.
   const needDetail = Boolean(live && (verdictEvent || failedEvent));
@@ -154,7 +213,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
       .then((detail) => {
         if (alive) setIncident((cur) => (cur?.kind === 'live' && cur.id === liveId ? { ...cur, detail } : cur));
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => { if (alive) setResumeError(`Could not refresh incident evidence — ${errorText(err)}`); });
     return () => {
       alive = false;
     };
@@ -166,17 +225,11 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const clearRunState = () => {
-    reset();
-    setReveal(false);
-    setRevealed(null);
-    setInspectId(null);
-    setDrifted(false);
-    setDecisionError(null);
-  };
+
 
   const breakNetwork = async () => {
     clearRunState();
+    rememberIncident(null);
     if (engine === 'local') {
       setIncident(createLocalIncident(pack, faultChoice));
       return;
@@ -185,7 +238,8 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     setStarting(true);
     try {
       const created = await createLiveIncident({ pack, fault: faultChoice, pace: Number.isFinite(speed) ? speed : 0 });
-      setIncident({ kind: 'live', id: created.incidentId, eventsUrl: created.eventsUrl, seed: created.seed, events: [], detail: null, ended: false });
+      setIncident({ kind: 'live', id: created.incidentId, eventsUrl: created.eventsUrl, seed: created.seed, events: [], detail: null, ended: false, createdAt: created.createdAt });
+      rememberIncident(created.incidentId);
     } catch (err) {
       setToast(`Backend did not start the run — ${errorText(err)}`);
     } finally {
@@ -197,14 +251,15 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     void breakNetwork();
   });
   useEffect(() => {
-    if (!params.autostart || backend === undefined) return;
+    if (!params.autostart || params.incident || backend === undefined) return;
     const t = window.setTimeout(() => onAutostart(), 0);
     return () => window.clearTimeout(t);
-  }, [params.autostart, backend]);
+  }, [params.autostart, params.incident, backend]);
 
   const resetAll = () => {
     clearRunState();
     setIncident(null);
+    rememberIncident(null);
   };
 
   const changePack = (next: PackId) => {
@@ -281,14 +336,14 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const twinLabel = backend?.twin.backend === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
   const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth);
   const thinking = current?.kind === 'model_call' ? current : undefined;
-  const ask: AskTarget | null = live && backend?.planner.kind === 'llm' ? { incidentId: live.id, model: backend.planner.model, ready: Boolean(view) } : null;
+  const ask: AskTarget | null = live && !live.detail?.recovered && backend?.planner.kind === 'llm' ? { incidentId: live.id, model: backend.planner.model, ready: Boolean(view) } : null;
   const openAsk = () => {
     setEvidenceTab('ask');
     window.setTimeout(() => document.getElementById('ask-input')?.focus(), 50);
   };
 
   return (
-    <div className="wb">
+    <div className={`wb ${presentation ? 'is-presentation' : ''}`}>
       <SiteHeader variant="app" theme={theme} onToggleTheme={onToggleTheme} />
       <main id="main" className="wb-main" tabIndex={-1}>
         <section className="wb-hero">
@@ -377,20 +432,25 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           </div>
         </section>
 
-        <PhaseStepper seen={seen} current={frame.phase} />
-        <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} />
-
+        <div className="workbench-toolbar">
+          <button type="button" className="btn btn-ghost btn-sm" aria-pressed={presentation} onClick={() => setPresentation(!presentation)}>Presentation view</button>
+          {backend && <IncidentHistory onResume={(id) => void resumeIncident(id)} disabled={running || starting} />}
+          {live && <span className="connection-state" role="status">{live.ended ? 'Evidence synchronized' : streamState === 'connected' ? 'Live events connected' : streamState === 'reconnecting' ? 'Connection lost · reconnecting…' : 'Connecting to incident…'}</span>}
+          {live && !live.ended && ['closed', 'reconnecting'].includes(streamState) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStreamAttempt((n) => n + 1)}>Reconnect</button>}
+        </div>
+        {resumeError && <div className="recovery-notice" role="alert"><p>{resumeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => void resumeIncident(live?.id ?? params.incident ?? '')}>Retry loading evidence</button></div>}
+        {live?.detail?.recovered && <p className="recovery-notice">Saved evidence · {live.detail.outcome?.reason ?? 'This incident is complete and retained for review.'}</p>}
+        <ImpactSummary frame={frame} view={view} ready={verdictVisible} />
         <div className="wb-grid">
-          <div className="wb-left">
-            <Stage topo={topo} frame={frame} animate={!reduced} />
-            <CandidateBoard frame={frame} onInspect={setInspectId} />
-          </div>
-          <aside className="wb-right" aria-label="Verdict and timeline">
+            <div className="wb-metrics">
+              <PhaseStepper seen={seen} current={frame.phase} />
+              <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} />
+            </div>
             <section className={`verdict-card ${verdict ? `v-${verdict.toLowerCase()}` : failedEvent ? 'v-inconclusive' : hasRun || starting ? 'v-running' : 'v-idle'}`} aria-labelledby="verdict-title">
               {!hasRun && !starting && (
                 <>
                   <p className="stage-kicker">How to read this</p>
-                  <h2 id="verdict-title">One button. Eight gates. Zero guesswork.</h2>
+                  <h2 id="verdict-title">Every recommendation carries evidence.</h2>
                   <p>The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.</p>
                 </>
               )}
@@ -439,7 +499,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                       <p className="briefing-cites">
                         {view.narrative.evidenceIds.length ? (
                           <>
-                            <StatusChip tone="ok">{view.narrative.evidenceIds.length} cited IDs verified</StatusChip>
+                            <StatusChip tone="ok">{view.narrative.evidenceIds.length} source IDs found · claims need review</StatusChip>
                             {view.narrative.evidenceIds.map((id) => (
                               <code key={id}>{id}</code>
                             ))}
@@ -478,7 +538,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                               ? 'Rolled back'
                               : outcome.status === 'expired'
                                 ? 'Approval expired'
-                                : 'Apply refused'}
+                                : outcome.status === 'recovery_required' ? 'Operator recovery required' : 'Apply refused'}
                       </StatusChip>
                       <span>{outcome.reason}</span>
                     </p>
@@ -501,9 +561,15 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 </>
               )}
             </section>
-            <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />
-          </aside>
+          <div className="wb-left">
+            <Stage topo={topo} frame={frame} animate={!reduced} />
+            <CandidateBoard frame={frame} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />
+          </div>
+          <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />
         </div>
+        {verdictVisible && view && <CandidateComparison view={view} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />}
+        {verdictVisible && <EvidenceReplay key={runId} events={visible} />}
+
 
         <Evidence
           view={view}
@@ -517,6 +583,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           verdictVisible={verdictVisible}
           decisionVisible={Boolean(outcome)}
         />
+        {backend && <BenchmarkPanel />}
       </main>
 
       {view?.run.selected && (

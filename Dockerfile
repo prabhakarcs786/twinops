@@ -20,7 +20,8 @@ COPY backend/pyproject.toml ./
 COPY backend/twinops ./twinops
 RUN pip install . \
  && python -m twinops.evaluation --planner runbook --seeds 10 --out /app/data/reports/runbook.json \
- && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin twinops
+ && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin twinops \
+ && chown -R 10001:10001 /app/data
 COPY --from=web /web/dist /app/static
 
 ENV HOST=0.0.0.0 \

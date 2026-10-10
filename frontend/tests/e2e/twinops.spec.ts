@@ -81,6 +81,31 @@ test('keyboard users can operate the evidence tabs', async ({ page }) => {
   await expect(page.getByRole('tabpanel')).toContainText('G5');
 });
 
+test('presentation view distinguishes tested coverage and lets reviewers compare and replay evidence', async ({ page }) => {
+  await page.goto('/workbench?engine=local&speed=instant&fault=cert_expiry&view=presentation');
+  await page.getByRole('button', { name: 'Break the network' }).click();
+  const verdict = page.getByRole('region', { name: 'PASS WITH WARNINGS' });
+  await expect(verdict).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Service impact' })).toContainText('2 of 4 affected journeys verified in twin');
+  await expect(page.getByRole('region', { name: 'Service impact' })).toContainText('2 affected journeys are outside the tested slice');
+  const decisionBox = await verdict.boundingBox();
+  const networkBox = await page.getByRole('region', { name: 'Demo network' }).boundingBox();
+  expect(decisionBox!.y).toBeLessThan(networkBox!.y);
+  const selected = page.locator('.comparison-selected');
+  await expect(selected).toContainText('Selected');
+  await selected.getByRole('button').click();
+  await expect(page.getByRole('tab', { name: 'Proof Gate' })).toHaveAttribute('aria-selected', 'true');
+  await page.locator('.evidence-replay summary').click();
+  const replay = page.locator('.evidence-replay');
+  await expect(replay.getByRole('button', { name: 'Previous' })).toBeDisabled();
+  const first = await replay.locator('h3').innerText();
+  await replay.getByRole('button', { name: 'Next' }).click();
+  await expect(replay.locator('h3')).not.toHaveText(first);
+  await expect(page.getByRole('button', { name: 'Review & approve' })).toBeVisible();
+  await expect(page.locator('.outcome')).toHaveCount(0);
+  await expectNoA11yViolations(page);
+});
+
 test('pitch deck navigates by keyboard and every slide passes accessibility checks', async ({ page }) => {
   await page.goto('/deck');
   await expect(page.getByRole('region', { name: /^1 of 10/ })).toBeVisible();

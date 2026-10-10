@@ -10,6 +10,7 @@ from .catalogue import (
     apply_change_set,
     diff_states,
     forbidden_reasons,
+    required_challenges,
     session_impact,
     touched_nodes,
     validate_change_set,
@@ -218,6 +219,7 @@ class Experiment:
     forbidden: list[str]
     rollback: dict[str, Any] = field(default_factory=dict)
     latency_budget_ms: float = LATENCY_BUDGET_MS
+    supported_challenges: set[str] = field(default_factory=lambda: set(CHALLENGES))
 
 
 async def run_experiment(ctx: TwinContext, twin: Twin, change: dict[str, Any]) -> Experiment:
@@ -249,6 +251,7 @@ async def run_experiment(ctx: TwinContext, twin: Twin, change: dict[str, Any]) -
     exp = Experiment(change, [], after, diff, touched_nodes(change, ctx.topo), fixed, restored, regressions, delta, forbidden_reasons(change),
                      {"rehearsed": False, "matches": False, "restoredHash": ""})
     exp.latency_budget_ms = getattr(twin, "latency_budget_ms", LATENCY_BUDGET_MS)
+    exp.supported_challenges = twin.supported_challenges
     return exp
 
 
@@ -286,11 +289,17 @@ def evaluate_gates(repro: dict[str, Any], exp: Experiment, challenges: list[dict
     else:
         add("G3", "pass", "unaffected journeys, negative tests and positive control unchanged")
 
-    if challenges is None:
+    if challenges is None and exp.restored and not exp.regressions and not exp.forbidden and not exp.errors:
+        add("G4", "fail", "required challenge evidence missing: candidate was not attacked")
+    elif challenges is None:
         add("G4", "skip", "not attacked — an earlier gate already failed")
     else:
         hard = [c for c in challenges if not c["ok"] and not c["soft"]]
-        if hard:
+        missing = [] if exp.errors else [k for k in required_challenges(exp.change)
+                                         if k in exp.supported_challenges and not any(c["kind"] == k for c in challenges)]
+        if missing:
+            add("G4", "fail", f"required challenge evidence missing: {', '.join(missing)}")
+        elif hard:
             add("G4", "fail", "; ".join(f"{c['label']}: {c['detail']}" for c in hard))
         else:
             add("G4", "pass", f"survived {len(challenges)} challenges")

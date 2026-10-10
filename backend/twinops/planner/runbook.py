@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..catalogue import category_of, change_set
+from ..catalogue import change_set, required_challenges
 from ..model import covers
 from ..topology import node_by_id, pop_by_index
 from .base import DiagnosticPort
@@ -178,12 +178,7 @@ def evaluation_case(hyp: dict[str, Any], obs: dict[str, Any], topo: dict[str, An
 
 
 def runbook_challenges(cs: dict[str, Any]) -> list[str]:
-    category = category_of(cs)
-    if category == "routing":
-        return ["dual_stack", "secondary_failure", "surge_x3"]
-    if category == "dns":
-        return ["warm_cache", "surge_x3"]
-    return ["dual_stack", "session_continuity"]
+    return required_challenges(cs)
 
 
 def runbook_revision(cs: dict[str, Any], failed: list[str], captured: dict[str, Any], obs: dict[str, Any], topo: dict[str, Any]) -> dict[str, Any] | None:

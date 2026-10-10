@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 import { evaluateOne, runControls } from '../../src/engine/evaluation.ts';
 import { SUPPORTED_FAULTS } from '../../src/engine/harness.ts';
 import { buildProofPack, decide, startIncident } from '../../src/engine/orchestrator.ts';
+import { selectChallenges } from '../../src/engine/planner.ts';
 import { sha256 } from '../../src/engine/sha256.ts';
-import type { FaultId } from '../../src/engine/types.ts';
+import { createContext, evaluateGates, runChallenge, runExperiment } from '../../src/engine/twin.ts';
+import type { ChangeSet, FaultId } from '../../src/engine/types.ts';
 
 describe('sha256', () => {
   it('matches the reference digest', () => {
@@ -20,6 +22,24 @@ const EXPECTED_SELECTED: Record<Exclude<FaultId, 'unsupported_link_flap'>, { act
 };
 
 describe('incident loop', () => {
+  it('mixed actions cannot hide missing or failed DNS cache evidence', () => {
+    const session = startIncident({ pack: 'core', fault: 'dns_failure', seed: 1 });
+    const ctx = createContext(session.run.observation, session.run.topology, session.demo.captureSupported());
+    const change: ChangeSet = { id: 'mixed', label: 'Mixed routing and DNS fix', hash: 'test', origin: 'llm', rationale: 'Mixed catalogue actions', steps: [
+      { action: 'restart_service', target: 'B17', params: { service: 'bgp' } },
+      { action: 'restore_record', target: 'DNS-1', params: { host: 'svc.demo', value: '10.40.0.10' } },
+    ] };
+    const exp = runExperiment(ctx, change);
+    const kinds = selectChallenges(change);
+    assert.ok(kinds.includes('warm_cache'));
+    assert.ok(kinds.includes('session_continuity'));
+    const challenges = kinds.map((kind) => runChallenge(ctx, exp, kind));
+    for (const evidence of [challenges, [], null, challenges.filter((c) => c.kind !== 'warm_cache')]) {
+      const result = evaluateGates(session.run.reproduction, exp, evidence);
+      assert.equal(result.decision, 'rejected');
+      assert.equal(result.gates.find((g) => g.id === 'G4')?.status, 'fail');
+    }
+  });
   for (const fault of SUPPORTED_FAULTS) {
     it(`${fault}: diagnoses, rejects unsafe options and verifies a bounded fix`, () => {
       const session = startIncident({ pack: 'core', fault, seed: 7 });

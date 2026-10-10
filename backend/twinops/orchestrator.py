@@ -470,31 +470,60 @@ async def apply_with_approval(session: IncidentSession, approval: dict[str, Any]
     else:
         await rec.push(600, "approval_recorded", "approve", "operator", "ok", f"Approved by {approval['operator']}",
                        f"Token {short_hash(approval['token'])} bound to change {short_hash(approval['changeHash'])} and state {short_hash(approval['targetStateHash'])}.", approval)
-        current = await demo.state_hash()
+        try:
+            current = await demo.state_hash()
+        except Exception as exc:
+            await refuse(f"Could not read target state ({type(exc).__name__}); nothing applied.")
+            session.status = "closed"
+            return session.events[prior["seq"]:]
         if current != approval["targetStateHash"]:
             await refuse(f"Target state drifted ({short_hash(approval['targetStateHash'])} → {short_hash(current)}) since the snapshot. Re-observe and re-verify before any change.")
         else:
-            previous = await demo.apply_approved(selected["change"], approval["token"])
-            after = await demo.observe()
-            v6 = [{**(await demo.probe(j["id"], "v6")), "kind": "challenge"} for j in run["topology"]["journeys"] if j["from"] in run["v6Pops"]]
-            post = [*after["probes"], *v6]
-            failed = [p for p in post if not p["ok"]]
-            await rec.push(1400, "applied", "apply", "apply", "prod", f"Applied to demo network: {selected['change']['label']}",
-                           f"{' + '.join(describe_step(s) for s in selected['change']['steps'])} executed once via the apply gateway.",
-                           {"change": selected["change"], "token": approval["token"], "network": demo.backend})
-            if not failed:
-                session.outcome = {"status": "applied", "reason": "post-change checks passed", "postChecks": post}
+            previous = None
+            attempted = False
+            post: list[dict[str, Any]] = []
+            try:
+                # Capture recovery state before any write: apply may fail after changing one device.
+                previous = await demo.capture_supported()
+                if await demo.state_hash() != current:
+                    await refuse("Target changed while preparing apply. Re-observe and re-verify.")
+                else:
+                    attempted = True
+                    await demo.apply_approved(selected["change"], approval["token"])
+                    after = await demo.observe()
+                    v6 = [{**(await demo.probe(j["id"], "v6")), "kind": "challenge"}
+                          for j in run["topology"]["journeys"] if j["from"] in run["v6Pops"]]
+                    post = [*after["probes"], *v6]
+                    failed = [p for p in post if not p["ok"]]
+                    if failed:
+                        raise RuntimeError(f"{len(failed)} post-change checks failed")
+                    await rec.push(1400, "applied", "apply", "apply", "prod", f"Applied to demo network: {selected['change']['label']}",
+                                   "The exact approved change was applied and checked on the demo network.",
+                                   {"change": selected["change"], "token": approval["token"], "network": demo.backend})
+                    session.outcome = {"status": "applied", "reason": "post-change checks passed", "postChecks": post}
 
-                def restored(f: dict[str, Any]) -> None:
-                    f["prod"] = {"probes": _by_id([p for p in after["probes"] if p["kind"] == "journey"]), "alarmNodes": [], "status": "restored"}
+                    def restored(f: dict[str, Any]) -> None:
+                        f["prod"] = {"probes": _by_id([p for p in after["probes"] if p["kind"] == "journey"]), "alarmNodes": [], "status": "restored"}
 
-                await rec.push(1600, "post_check", "apply", "apply", "ok", "Post-change verification passed",
-                               f"{len(post)} checks on the demo network: all customer journeys, negative tests and IPv6 parity succeed.", {"postChecks": post}, restored)
-            else:
-                await demo.restore(previous, approval["token"])
-                session.outcome = {"status": "rolled_back", "reason": f"{len(failed)} post-checks failed", "postChecks": post}
-                await rec.push(1600, "rolled_back", "apply", "apply", "fail", "Post-check failed — rolled back", "; ".join(f"{p['id']}: {p['detail']}" for p in failed),
-                               {"postChecks": post})
+                    await rec.push(1600, "post_check", "apply", "apply", "ok", "Post-change verification passed",
+                                   f"{len(post)} checks: customer journeys, negative tests and IPv6 parity succeed.", {"postChecks": post}, restored)
+            except Exception as exc:
+                if not attempted:
+                    await refuse(f"Could not prepare apply ({type(exc).__name__}); nothing applied.")
+                else:
+                    reason = f"Apply or verification failed ({type(exc).__name__})."
+                    try:
+                        await demo.restore(previous, approval["token"])
+                        if await demo.state_hash() != current:
+                            raise RuntimeError("restored state does not match the pre-apply hash")
+                    except Exception as recovery_error:
+                        session.outcome = {"status": "recovery_required", "reason": f"{reason} Rollback could not be verified ({type(recovery_error).__name__}). Operator recovery required.", "postChecks": post}
+                        session.status = "recovery_required"
+                        await rec.push(0, "recovery_required", "apply", "apply", "fail", "Operator recovery required", session.outcome["reason"], {"postChecks": post})
+                        return session.events[prior["seq"]:]
+                    session.outcome = {"status": "rolled_back", "reason": f"{reason} Pre-apply state restored and hash verified.", "postChecks": post}
+                    await rec.push(0, "rolled_back", "apply", "apply", "fail", "Change rolled back — restoration verified", session.outcome["reason"], {"postChecks": post})
+
     session.status = "closed"
     return session.events[len(session.events) - rec.seq + prior["seq"]:]
 

@@ -7,19 +7,22 @@ import contextlib
 import logging
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from .config import Settings
 from .engine import new_incident_id, pick_fault
 from .harness import FAULT_INFO, ModelDemoNetwork
-from .orchestrator import IncidentSession, decide, qa_context, run_incident
+from .orchestrator import IncidentSession, decide, idle_frame, qa_context, run_incident
 from .planner.factory import build_planner
+from .planner.runbook import RunbookPlanner
+from .store import IncidentStore
 from .topology import build_topology
 from .twin import ModelTwin
 
 log = logging.getLogger("twinops")
-TERMINAL = {"closed", "escalated", "failed"}
+TERMINAL = {"closed", "escalated", "failed", "recovery_required"}
 
 
 class BusyError(RuntimeError):
@@ -35,8 +38,12 @@ class LiveIncident:
     changed: asyncio.Condition = field(default_factory=asyncio.Condition)
     task: asyncio.Task[Any] | None = None
     error: str | None = None
+    recovered: bool = False
+    persist: Callable[[], None] | None = None
 
     async def notify(self, _event: dict[str, Any] | None = None) -> None:
+        if self.persist:
+            self.persist()
         async with self.changed:
             self.changed.notify_all()
 
@@ -51,6 +58,56 @@ class Registry:
         self.incidents: dict[str, LiveIncident] = {}
         self._lab_lock = asyncio.Lock()
         self._lab: Any = None
+        self.store = IncidentStore(settings.data_dir)
+        # A process restart cannot establish the state of a formerly live target.
+        for record in self.store.unfinished():
+            applying = record["status"] == "applying"
+            record["status"] = "recovery_required" if applying else "closed"
+            record["outcome"] = {
+                "status": "recovery_required" if applying else "expired",
+                "reason": "Service restarted during apply; target state is unknown. Operator recovery required." if applying
+                else "Service restarted. Evidence retained; approval invalidated. Start a new investigation to re-observe the target.",
+                "postChecks": [],
+            }
+            prior = record["events"][-1] if record["events"] else None
+            record["events"].append({"seq": prior["seq"] + 1 if prior else 1, "at": prior["at"] if prior else 0,
+                                     "kind": "recovery_required" if applying else "run_failed", "phase": "apply" if applying else "gate",
+                                     "actor": "harness", "tone": "fail" if applying else "warn",
+                                     "title": "Operator recovery required" if applying else "Investigation interrupted by service restart",
+                                     "summary": record["outcome"]["reason"], "raw": None,
+                                     "frame": prior["frame"] if prior else idle_frame(record["topology"])})
+            self.store.save(record)
+
+    def _persist(self, live: LiveIncident) -> None:
+        s = live.session
+        self.store.save({"id": s.incident_id, "created": live.created, "seed": live.seed, "topology": live.topo,
+                         "sealedFault": s.sealed_fault, "backend": s.demo.backend, "status": s.status,
+                         "run": {k: v for k, v in s.run.items() if k != "events"}, "events": s.events,
+                         "approval": s.approval, "outcome": s.outcome, "narrative": s.narrative, "writes": s.demo.writes, "error": live.error})
+
+    def get(self, incident_id: str) -> LiveIncident | None:
+        if incident_id in self.incidents:
+            return self.incidents[incident_id]
+        record = self.store.get(incident_id)
+        if record is None:
+            return None
+        # Archived evidence has no live device handles or model calls, and cannot be approved.
+        demo = ModelDemoNetwork(record["topology"], record["seed"])
+        demo.writes = record["writes"]
+        demo.backend = record["backend"]
+        session = IncidentSession(incident_id=incident_id, sealed_fault=record["sealedFault"], demo=demo, twin=ModelTwin(),
+                                  planner=RunbookPlanner(), pace=0, run=record["run"], events=record["events"],
+                                  approval=record["approval"], outcome=record["outcome"], narrative=record["narrative"], status=record["status"])
+        if session.run:
+            session.run["events"] = session.events
+        return LiveIncident(session=session, topo=record["topology"], seed=record["seed"], created=record["created"],
+                            error=record["error"], recovered=True)
+
+    def history(self) -> list[dict[str, Any]]:
+        return [{"incidentId": r["id"], "createdAt": r["created"], "seed": r["seed"], "status": r["status"],
+                 "pack": r["run"].get("pack", r["topology"]["pack"]), "verdict": r["run"].get("verdict"),
+                 "outcome": (r["outcome"] or {}).get("status"), "planner": r["run"].get("planner")}
+                for r in self.store.recent()]
 
     def active(self) -> int:
         return sum(1 for i in self.incidents.values() if i.session.status == "running")
@@ -59,6 +116,8 @@ class Registry:
         if self.settings.twin == "emulated":
             from .lab.backend import lab_backends
 
+            if self.store.needs_recovery():
+                raise BusyError("a previous apply needs operator recovery; inspect the retained evidence before reusing the lab")
             if self._lab_lock.locked():
                 raise BusyError("the emulated lab is serving another incident; try again when it finishes")
             await self._lab_lock.acquire()
@@ -82,7 +141,9 @@ class Registry:
         session = IncidentSession(incident_id=new_incident_id(), sealed_fault=pick_fault(fault, seed), demo=demo, twin=twin,
                                   planner=build_planner(settings=self.settings), pace=pace)
         live = LiveIncident(session=session, topo=topo, seed=seed)
+        live.persist = lambda: self._persist(live)
         self.incidents[session.incident_id] = live
+        self._persist(live)
         self._evict()
         live.task = asyncio.create_task(self._run(live, include_evaluation_case))
         return live
@@ -126,13 +187,26 @@ class Registry:
         self._release_lab()
 
     async def decide(self, live: LiveIncident, operator: str, comment: str, decision: str) -> None:
-        if live.session.status != "awaiting_approval":
+        if live.recovered or live.session.status != "awaiting_approval":
             raise ValueError(f"incident is {live.session.status}, not awaiting approval")
         live.session.status = "applying"
         try:
+            await live.notify()
             await decide(live.session, operator, comment, decision, emit=live.notify)
+        except (Exception, asyncio.CancelledError):
+            # Cancellation and event/storage failures may escape the apply gateway.
+            # Keep the target quarantined until an operator establishes its state.
+            if live.session.status == "applying":
+                live.session.status = "recovery_required"
+                live.session.outcome = {"status": "recovery_required", "reason": "Apply interrupted; target state could not be verified. Operator recovery required.", "postChecks": []}
+                prior = live.session.events[-1]
+                live.session.events.append({"seq": prior["seq"] + 1, "at": prior["at"], "kind": "recovery_required", "phase": "apply",
+                                            "actor": "apply", "tone": "fail", "title": "Operator recovery required",
+                                            "summary": live.session.outcome["reason"], "raw": None, "frame": prior["frame"]})
+            raise
         finally:
-            await self._close_backends(live)
+            if live.session.status == "closed":
+                await self._close_backends(live)
             await live.notify()
 
     async def drift(self, live: LiveIncident) -> None:
@@ -141,6 +215,8 @@ class Registry:
         await live.session.demo.simulate_drift()
 
     async def ask(self, live: LiveIncident, question: str) -> dict[str, Any]:
+        if live.recovered:
+            raise ValueError("this is archived evidence; model questions require a live incident")
         planner = live.session.planner
         if not hasattr(planner, "answer"):
             raise ValueError("Ask TwinOps needs an LLM planner (configure Gemini, Ollama or an OpenAI-compatible endpoint)")
@@ -163,8 +239,12 @@ class Registry:
                 del self.incidents[incident_id]
 
     async def shutdown(self) -> None:
+        tasks = []
         for live in self.incidents.values():
             if live.task and not live.task.done():
                 live.task.cancel()
+                tasks.append(live.task)
             if not live.finished:
                 await self._close_backends(live)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

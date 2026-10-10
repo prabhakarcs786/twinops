@@ -4,6 +4,7 @@ import json
 import pytest
 
 from twinops.engine import run_model
+from twinops.evaluation import run_controls
 from twinops.harness import SUPPORTED_FAULTS
 from twinops.orchestrator import qa_context
 from twinops.planner.llm import MAX_QUESTIONS, LLMPlanner
@@ -53,6 +54,32 @@ SCRIPT = {
     "revise": lambda p: {"revise": False, "label": "", "rationale": "no safer narrower change", "steps": []},
     "narrate": lambda p: {"summary": "The model-proposed fix passed the defined tests; unsafe options were rejected.", "evidence_ids": ["H1", "cand-A", "FAKE"]},
 }
+
+
+def test_model_specific_controls_use_the_selected_planner():
+    clients = []
+
+    def factory():
+        client = ScriptedClient(SCRIPT)
+        clients.append(client)
+        return LLMPlanner(client)
+
+    controls = asyncio.run(run_controls(planner_factory=factory))
+    assert len(clients) == 2 and all(c.calls for c in clients)
+    assert all(c["planner"]["kind"] == "runbook" and c["scope"] == "gateway" for c in controls[:4])
+    assert all(c["planner"]["kind"] == "llm" and c["modelCalls"] > 0 for c in controls[4:])
+    assert controls[-1]["modelEvidence"]
+
+
+def test_arithmetically_false_temperature_claim_is_discarded():
+    def diagnosis(payload):
+        response = _diagnose(payload)
+        response["hypotheses"][0]["rationale"] = "61°C, which is above the threshold of 70°C, caused the failure."
+        return response
+
+    session = _run("route_misconfig", ScriptedClient({**SCRIPT, "diagnose": diagnosis}))
+    assert "above the threshold" not in json.dumps(session.run["hypotheses"])
+    assert any("contradictory numeric comparison" in r for e in session.events if e["kind"] == "planner_note" for r in e["raw"]["rejected"])
 
 
 def _run(fault, client, seed=4):

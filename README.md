@@ -9,7 +9,7 @@ TwinOps is a proof of concept for safer autonomous network operations. When a ne
 5. attacks its own best fix;
 6. hands a human only the change that survived an eight-gate **Proof Gate**.
 
-Production is written exactly once, through an apply gateway, after a human approves a change bound to its hash and to the target-state hash.
+Writes to the demo network go through an apply gateway after a human approves a change bound to its hash and to the target-state hash. Failed apply or post-check operations attempt a verified rollback; an interrupted apply or unverifiable rollback requires operator recovery.
 
 | Component | What it is |
 |---|---|
@@ -46,6 +46,10 @@ PYTHONPATH=backend TWINOPS_STATIC_DIR=frontend/dist .venv/bin/python -m twinops 
 
 Without a backend, the workbench runs its in-browser engine automatically. `?engine=local` forces it.
 
+The workbench includes a presentation view, measured service impact with tested-slice coverage, a candidate comparison, an evidence replay, and source observations behind hypotheses. Live incident URLs retain the incident ID so refresh resumes the same investigation. **Recent incidents** opens saved evidence; **Planner benchmark** compares reports for matching topology packs and seed ranges. The elapsed timer keeps running while a model call or event stream is quiet.
+
+Evidence is committed to `TWINOPS_DATA_DIR/incidents.sqlite3` before events are published. Completed runs, approvals, write logs and Proof Packs survive a process restart on the same disk. Unfinished investigations become read-only on restart: outstanding approvals expire, and an interrupted apply is marked `recovery_required`. Archived runs must be investigated again before any new approval.
+
 ## Configuration (`.env`)
 
 Every setting is an environment variable, listed with defaults in [.env.example](.env.example). For local runs, copy it to `.env` at the repo root, or point `TWINOPS_ENV_FILE` at another file. The server, `twinops.evaluation` and `twinops.lab` all load it.
@@ -60,7 +64,9 @@ The planner proposes; deterministic code judges. A model never executes anything
 
 - Every model output is schema-validated.
 - Cited evidence IDs must exist in the snapshot.
+- Hypothesis and briefing text with directly contradictory numeric comparisons is rejected. This narrow check does not establish that other claims are true; the UI exposes cited observations for review.
 - Actions must come from the typed catalogue.
+- Required challenges cover every action in a composed change. Missing mandatory supported challenge evidence fails the gate.
 - Device logs are fenced as untrusted data.
 - Calls are budgeted.
 - Any failure falls back to the runbook and is recorded as a `planner_note` event.
@@ -89,11 +95,10 @@ To evaluate the LLM planner against the same seeded harness as the runbook basel
 
 ```sh
 # GEMINI_API_KEY (or another provider) set in .env or your own shell
-PYTHONPATH=backend .venv/bin/python -m twinops.evaluation --planner llm --seeds 10 --out backend/.data/reports/llm.json
-PYTHONPATH=backend .venv/bin/python -m twinops.evaluation --planner runbook --seeds 10 --out backend/.data/reports/runbook.json
+PYTHONPATH=backend .venv/bin/python -m twinops.evaluation --planner llm --compare --seeds 10 --start-seed 1001 --out backend/.data/reports/comparison.json
 ```
 
-Reports are served at `GET /api/evaluation/reports`.
+This writes `comparison-runbook.json` and `comparison-llm.json`. Reports are served at `GET /api/evaluation/reports` and shown in the workbench. They distinguish verdict success from success without fallback, and report abstentions, unsafe passes, tokens, latency and fallback counts. Unsupported-fault and injected-log controls use the chosen planner and include its provenance; approval/schema controls intentionally use the deterministic runbook. Seeds vary a synthetic topology fixture, so these results are not production reliability estimates. A one-seed run is only a smoke check.
 
 ## Emulated lab (Containerlab)
 
@@ -114,6 +119,8 @@ PYTHONPATH=backend TWINOPS_TWIN=emulated TWINOPS_STATIC_DIR=frontend/dist .venv/
 ```
 
 Then open `/workbench`. Only one lab incident runs at a time.
+
+If an apply is interrupted or rollback cannot be verified, the lab remains blocked with `recovery_required`, including after service restart. Retain the Proof Pack and database and have the lab operator inspect and restore the target before reuse. There is deliberately no browser control to clear this block or approve archived evidence. For a disposable demo reset, stop the service, retain the old data directory as incident evidence, rebuild/reset the lab and start with a fresh `TWINOPS_DATA_DIR`. SQLite and the lab lock currently support one service process, not multiple workers sharing a target.
 
 How the lab behaves:
 
@@ -142,12 +149,14 @@ Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
 |---|---|
 | `GET /api/config` | Planner, twin backend, whether approval needs a passcode |
 | `POST /api/incidents` | `{pack, fault, seed?, pace}` → 202 with `incidentId`, `eventsUrl` |
+| `GET /api/incidents` | Latest 50 saved incident summaries for history |
 | `GET /api/incidents/{id}/events` | Server-Sent Events (`run`, `end`), resumable with `Last-Event-ID` |
 | `GET /api/incidents/{id}` | Run record, approval, outcome, AI briefing |
 | `POST /api/incidents/{id}/decision` | Approve or reject. Needs `Authorization: Bearer <TWINOPS_OPERATOR_TOKEN>` when set |
 | `POST /api/incidents/{id}/drift` | Harness: edit the target after the snapshot (proves approval invalidation) |
 | `GET /api/incidents/{id}/reveal` | Sealed fault label, only after the verdict |
 | `GET /api/incidents/{id}/proof-pack?format=json\|html` | Proof Pack export (HTML is served sandboxed) |
+| `GET /api/evaluation/reports` | Evaluation summaries and control provenance |
 
 Hardening:
 
@@ -167,18 +176,18 @@ deploy/cloudrun.sh            # Gemini API key from Secret Manager (see script h
 deploy/cloudrun.sh --vertex   # Vertex AI via the service account, no key
 ```
 
-Incident state is in memory. The script therefore deploys a single instance with session affinity, which is fine for a demo. Scaling out needs a shared store.
+Active tasks and device handles remain in memory; evidence is stored in SQLite. The image gives its non-root user write access to `/app/data`. Cloud Run's default container filesystem is ephemeral: this local storage does **not** preserve history across instance replacement. The deployment script uses one instance with session affinity for the demo. Reliable cloud history and scaling require an external durable store and shared coordination; they are not supplied by this implementation.
 
 ## Tests
 
 ```sh
-cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/ruff check .   # 80 tests incl. 40 TS↔Python parity cases, lab renderers/probes with a fake runner
+cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/ruff check .   # includes TS↔Python parity, safety/recovery, persistence and fake lab adapters
 cd frontend && npm test             # engine tests + Playwright E2E + axe (desktop + mobile), in-browser engine
-cd frontend && npm run test:live    # Playwright against the real FastAPI backend: SSE, passcode-gated approval, Proof Pack download, CSP
+cd frontend && npm run test:live    # real FastAPI: SSE, approval, refresh/history, quiet-stream timer, export, CSP
 ```
 
 ## Pitch deck
 
 Open `/deck`. Use arrow keys to move between slides and **Save as PDF** to export. To regenerate `docs/TwinOps_Deck.pdf`, run `npm run preview` and then `npm run export:deck` (both in `frontend/`).
 
-Workbench URL options: `?fault=route_misconfig|dns_failure|cert_expiry|unsupported_link_flap`, `?speed=instant`, `?autostart=1`, `?pack=enterprise`, `?engine=local`.
+Workbench URL options: `?fault=route_misconfig|dns_failure|cert_expiry|unsupported_link_flap`, `?speed=instant`, `?autostart=1`, `?pack=enterprise`, `?engine=local`, `?view=presentation`, `?incident=<saved-id>`.

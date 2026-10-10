@@ -216,6 +216,19 @@ def category_of(cs: dict[str, Any]) -> str:
     return CATALOGUE[first["action"]].category
 
 
+def required_challenges(cs: dict[str, Any]) -> list[str]:
+    """Coverage is a property of the whole change, independent of the planner."""
+    required: list[str] = []
+    for step in cs["steps"]:
+        category = category_of({"steps": [step]})
+        required.extend({"routing": ["dual_stack", "secondary_failure", "surge_x3"],
+                         "dns": ["warm_cache", "surge_x3"],
+                         "tls": ["dual_stack", "session_continuity"]}[category])
+    if session_impact(cs) != "none":
+        required.append("session_continuity")
+    return list(dict.fromkeys(required))
+
+
 _DIFF_SCOPE = ("b17", "dns", "clients", "gw", "notes")
 _NODE_OF = {"b17": "B17", "dns": "DNS-1", "clients": "clients", "gw": "GW-1", "notes": "B17"}
 

@@ -13,7 +13,7 @@ from .twin import ModelTwin
 
 
 def new_incident_id() -> str:
-    return f"inc-{secrets.token_hex(3)}"
+    return f"inc-{secrets.token_hex(12)}"
 
 
 def pick_fault(fault: str, seed: int) -> str:

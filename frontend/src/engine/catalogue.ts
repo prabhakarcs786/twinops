@@ -1,7 +1,7 @@
 import { addMinutes, clone, type NetState } from './model.ts';
 import { sha256 } from './sha256.ts';
 import { popByIndex, pops } from './topology.ts';
-import type { ActionStep, ActionType, ChangeSet, DiffLine, ParamValue, Topology } from './types.ts';
+import type { ActionStep, ActionType, ChallengeKind, ChangeSet, DiffLine, ParamValue, Topology } from './types.ts';
 
 export const CATALOGUE_VERSION = 'catalogue-0.1.0';
 export const POLICY_VERSION = 'policy-0.1.0';
@@ -223,6 +223,17 @@ export function categoryOf(cs: Pick<ChangeSet, 'steps'>): Category {
   const [first] = cs.steps;
   if (first.action === 'restart_service') return first.target === 'GW-1' ? 'tls' : 'routing';
   return CATALOGUE[first.action].category;
+}
+
+export function requiredChallenges(cs: Pick<ChangeSet, 'steps'>): ChallengeKind[] {
+  const byCategory: Record<Category, ChallengeKind[]> = {
+    routing: ['dual_stack', 'secondary_failure', 'surge_x3'],
+    dns: ['warm_cache', 'surge_x3'],
+    tls: ['dual_stack', 'session_continuity'],
+  };
+  const required = cs.steps.flatMap((step) => byCategory[categoryOf({ steps: [step] })]);
+  if (sessionImpact(cs) !== 'none') required.push('session_continuity');
+  return [...new Set(required)];
 }
 
 const DIFF_SCOPE = ['b17', 'dns', 'clients', 'gw', 'notes'] as const;

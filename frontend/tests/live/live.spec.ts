@@ -81,3 +81,39 @@ test('the in-browser engine stays available next to the backend', async ({ page 
   await page.getByRole('button', { name: 'Break the network' }).click();
   await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toContainText('Restore record and purge cached answer');
 });
+
+test('refresh resumes the same incident and history reopens its evidence', async ({ page }) => {
+  let creates = 0;
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/api/incidents')) creates++; });
+  await breakAndWaitForVerdict(page, 'dns_failure', 'PASS UNDER DEFINED TESTS');
+  const incident = new URL(page.url()).searchParams.get('incident');
+  expect(incident).toBeTruthy();
+  const count = await page.locator('.timeline-count').innerText();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toBeVisible();
+  await expect(page.locator('.timeline-count')).toHaveText(count);
+  expect(new URL(page.url()).searchParams.get('incident')).toBe(incident);
+  expect(creates).toBe(1);
+  await expect(page.getByRole('button', { name: 'Review & approve' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await page.getByRole('button', { name: 'Recent incidents' }).click();
+  await page.getByRole('region', { name: 'Saved incidents' }).getByRole('button').filter({ hasText: incident! }).click();
+  await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('incident')).toBe(incident);
+  expect(creates).toBe(1);
+});
+
+test('elapsed time advances while the event stream is quiet', async ({ page }) => {
+  await page.clock.install();
+  // Hold the stream before its first event, as with a quiet model call or reconnect.
+  await page.route('**/api/incidents/*/events', () => {});
+  await page.goto('/workbench?speed=instant&fault=dns_failure');
+  await expect(page.locator('.mode-line')).toContainText('Live backend');
+  await page.getByRole('button', { name: 'Break the network' }).click();
+  await expect(page).toHaveURL(/incident=inc-/);
+  const elapsed = page.locator('.counter').filter({ hasText: 'Elapsed' }).locator('.counter-value');
+  const before = await elapsed.innerText();
+  await page.clock.fastForward(3000);
+  await expect(elapsed).not.toHaveText(before);
+  await expect(page.locator('.timeline-count')).toHaveText('0 events');
+});

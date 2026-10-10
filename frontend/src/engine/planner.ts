@@ -1,4 +1,4 @@
-import { categoryOf } from './catalogue.ts';
+import { requiredChallenges } from './catalogue.ts';
 import { covers, type NetState } from './model.ts';
 import { hashOf } from './sha256.ts';
 import { nodeById, popByIndex } from './topology.ts';
@@ -217,10 +217,7 @@ export function proposeCandidates(hyp: Hypothesis, captured: NetState, obs: Obse
 
 /** Challenge role: chooses adverse conditions from the approved catalogue only. */
 export function selectChallenges(cs: ChangeSet): ChallengeKind[] {
-  const category = categoryOf(cs);
-  if (category === 'routing') return ['dual_stack', 'secondary_failure', 'surge_x3'];
-  if (category === 'dns') return ['warm_cache', 'surge_x3'];
-  return ['dual_stack', 'session_continuity'];
+  return requiredChallenges(cs);
 }
 
 /** Narrow or widen a candidate after a challenge failure. Returns null when no bounded revision exists. */

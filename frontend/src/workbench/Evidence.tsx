@@ -60,6 +60,14 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
   const decided = frame.candidates.filter((c) => ['pass', 'warn', 'rejected', 'superseded'].includes(c.status));
   const activeId = inspectId && decided.some((c) => c.id === inspectId) ? inspectId : (frame.selectedId ?? decided.at(-1)?.id ?? null);
   const record = view?.run.candidates.find((c) => c.change.id === activeId);
+  const observation = view?.run.observation;
+  const sources = new Map<string, string>([
+    ...(observation?.probes ?? []).map((p): [string, string] => [p.id, `${p.label}: ${p.detail}`]),
+    ...(observation?.alarms ?? []).map((a): [string, string] => [a.id, a.text]),
+    ...(observation?.changes ?? []).map((c): [string, string] => [c.id, c.summary]),
+    ...(view?.run.guardedLogs ?? []).map((l): [string, string] => [l.id, `${l.flagged ? 'Instruction-like text · untrusted data: ' : ''}${l.text}`]),
+    ...(view?.run.diagnostics ?? []).map((p): [string, string] => [p.id, p.detail]),
+  ]);
   const approval = decisionVisible && record && record.change.id === view?.run.selected?.change.id ? view?.approval : undefined;
   const gates = record?.gates.map((g): GateCheck => {
     if (g.id !== 'G8' || !approval || !view?.outcome) return g;
@@ -119,6 +127,10 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
                   <div>
                     <p className="hyp-title">{h.title}</p>
                     <p className="hyp-why">{h.rationale}</p>
+                    {observation && <details className="source-evidence"><summary>Inspect cited observations</summary>
+                      <p>References identify sources. The hypothesis is an interpretation; a valid reference does not establish its claim.</p>
+                      <ul>{[...new Set([...h.supporting, ...h.contradicting])].map((id) => <li key={id}><strong>{id}</strong> · {sources.get(id) ?? 'Source detail unavailable'}</li>)}</ul>
+                    </details>}
                     <p className="hyp-evidence">
                       <span>
                         <StatusChip tone="ok">{h.supporting.length} supporting</StatusChip> {h.supporting.join(' · ')}

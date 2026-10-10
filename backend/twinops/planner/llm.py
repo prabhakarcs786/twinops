@@ -13,6 +13,7 @@ from typing import Any
 
 from ..catalogue import CATALOGUE, catalogue_for_prompt, category_of, change_set, describe_step, validate_change_set
 from .base import CHALLENGES, HYPOTHESIS_TYPES, DiagnosticPort
+from .claims import contradictory_comparisons
 from .llm_client import LLMClient, LLMError
 from .runbook import RunbookPlanner, runbook_challenges
 
@@ -148,6 +149,10 @@ class LLMPlanner:
         hypotheses: list[dict[str, Any]] = []
         rejected: list[str] = []
         for item in (data or {}).get("hypotheses", [])[:3]:
+            invalid_claims = contradictory_comparisons(f"{item.get('title', '')}. {item.get('rationale', '')}")
+            if invalid_claims:
+                rejected.extend(invalid_claims)
+                continue
             if item.get("type") not in HYPOTHESIS_TYPES or item.get("target") not in node_ids or any(h["type"] == item["type"] for h in hypotheses):
                 rejected.append(f"invalid or duplicate hypothesis {item.get('type')!r}")
                 continue
@@ -260,8 +265,9 @@ class LLMPlanner:
                            "and list them in evidence_ids. Use only IDs from citable_ids.",
                    "run": summary, "citable_ids": sorted(known)}
         data, meta = await self._call("narrate", payload, schema)
-        if data is None or not str(data.get("summary", "")).strip():
-            self._note("narrate", "No approver briefing", f"{meta.get('error') or 'empty output'} — the Proof Pack stands on its own.", meta, fallback=True)
+        invalid_claims = contradictory_comparisons(str((data or {}).get("summary", "")))
+        if data is None or not str(data.get("summary", "")).strip() or invalid_claims:
+            self._note("narrate", "No approver briefing", f"{meta.get('error') or (invalid_claims[0] if invalid_claims else 'empty output')} — the Proof Pack stands on its own.", meta, rejected=invalid_claims, fallback=True)
             return None
         cited = [e for e in data.get("evidence_ids", []) if e in known]
         self._note("narrate", f"{self.model} drafted the approver briefing", f"cites {len(cited)} evidence IDs", meta)

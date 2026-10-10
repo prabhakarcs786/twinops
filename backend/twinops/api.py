@@ -93,7 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     def get_live(incident_id: str) -> LiveIncident:
-        live = registry.incidents.get(incident_id)
+        live = registry.get(incident_id)
         if live is None:
             raise HTTPException(404, "unknown incident")
         return live
@@ -145,14 +145,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except BusyError as exc:
             raise HTTPException(409, str(exc)) from exc
         iid = live.session.incident_id
-        return {"incidentId": iid, "seed": live.seed, "eventsUrl": f"/api/incidents/{iid}/events"}
+        return {"incidentId": iid, "seed": live.seed, "eventsUrl": f"/api/incidents/{iid}/events", "createdAt": live.created}
 
     @app.get("/api/incidents/{incident_id}")
     async def get_incident(incident_id: str) -> dict[str, Any]:
         live = get_live(incident_id)
         s = live.session
         return {"incidentId": s.incident_id, "status": s.status, "seed": live.seed, "run": s.run or None, "approval": s.approval, "outcome": s.outcome,
-                "narrative": s.narrative, "events": len(s.events), "error": live.error}
+                "narrative": s.narrative, "events": len(s.events), "error": live.error, "createdAt": live.created, "recovered": live.recovered,
+                "pack": live.topo["pack"]}
+
+    @app.get("/api/incidents")
+    async def incident_history() -> list[dict[str, Any]]:
+        return registry.history()
 
     @app.get("/api/incidents/{incident_id}/events")
     async def events(incident_id: str, request: Request, follow: bool = True, last_event_id: str | None = Header(default=None)) -> StreamingResponse:
@@ -239,7 +244,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             with contextlib.suppress(ValueError, KeyError):
                 data = json.loads(path.read_text())
                 out.append({"name": path.stem, "generatedAt": data["generatedAt"], "planner": data["planner"], "seeds": data["seeds"],
-                            "byFault": data["byFault"], "controls": data["controls"]})
+                            "byFault": data["byFault"], "controls": [{k: v for k, v in c.items() if k != "modelEvidence"} for c in data["controls"]],
+                            "pack": data.get("pack", "core"), "startSeed": data.get("startSeed", 1), "suiteVersion": data.get("suiteVersion", "legacy"),
+                            "note": data.get("note", ""), "durationS": data.get("durationS")})
         return out
 
     static_dir = settings.static_dir

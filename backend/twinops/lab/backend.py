@@ -127,7 +127,8 @@ class LabDemoNetwork:
         return current
 
     async def restore(self, previous: State, token: str) -> None:
-        await self.inst.push(previous, self._declared)
+        # A previous push may have partially succeeded; declared state cannot describe it.
+        await self.inst.push(previous, None)
         self._declared = previous
         self._record("apply_gateway", "rollback executed on lab devices", token)
 

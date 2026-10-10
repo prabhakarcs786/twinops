@@ -32,7 +32,7 @@ else
   SECRETS="${SECRETS},GEMINI_API_KEY=twinops-gemini-key:latest"
 fi
 
-# Incident state lives in memory and SSE streams are long-lived:
+# Active tasks live in memory, SQLite evidence is local/ephemeral, and SSE streams are long-lived:
 # one instance (no cross-instance state), session affinity, request timeout above the approval window.
 gcloud run deploy "${SERVICE}" \
   --project "${PROJECT_ID}" \

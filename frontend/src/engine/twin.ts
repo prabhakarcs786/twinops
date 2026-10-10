@@ -1,4 +1,4 @@
-import { applyChangeSet, diffStates, forbiddenReasons, MAX_BLAST_RADIUS, sessionImpact, touchedNodes, validateChangeSet } from './catalogue.ts';
+import { applyChangeSet, diffStates, forbiddenReasons, MAX_BLAST_RADIUS, requiredChallenges, sessionImpact, touchedNodes, validateChangeSet } from './catalogue.ts';
 import { clone, fixedSuite, modelledAlarms, probeJourney, type NetState } from './model.ts';
 import { hashOf } from './sha256.ts';
 import { LATENCY_BUDGET_MS, nodeById, popByIndex, pops } from './topology.ts';
@@ -220,10 +220,12 @@ export function evaluateGates(repro: Reproduction, exp: Experiment, challenges: 
       : { id: 'G3', status: 'fail', reason: exp.regressions.map((p) => regressionText(p, exp.regressionBaselines[p.id])).join('; ') },
   );
 
-  if (!challenges) add({ id: 'G4', status: 'skip', reason: 'not attacked — an earlier gate already failed' });
+  if (!challenges && exp.restored && !exp.regressions.length && !exp.forbidden.length && !exp.errors.length) add({ id: 'G4', status: 'fail', reason: 'required challenge evidence missing: candidate was not attacked' });
+  else if (!challenges) add({ id: 'G4', status: 'skip', reason: 'not attacked — an earlier gate already failed' });
   else {
     const hard = challenges.filter((c) => !c.ok && !c.soft);
-    add(hard.length ? { id: 'G4', status: 'fail', reason: hard.map((c) => `${c.label}: ${c.detail}`).join('; ') } : { id: 'G4', status: 'pass', reason: `survived ${challenges.length} challenges` });
+    const missing = exp.errors.length ? [] : requiredChallenges(exp.change).filter((kind) => !challenges.some((c) => c.kind === kind));
+    add(missing.length ? { id: 'G4', status: 'fail', reason: `required challenge evidence missing: ${missing.join(', ')}` } : hard.length ? { id: 'G4', status: 'fail', reason: hard.map((c) => `${c.label}: ${c.detail}`).join('; ') } : { id: 'G4', status: 'pass', reason: `survived ${challenges.length} challenges` });
   }
 
   if (exp.errors.length) add({ id: 'G5', status: 'fail', reason: `schema validation: ${exp.errors.join('; ')}` });
