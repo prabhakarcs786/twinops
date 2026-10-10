@@ -460,8 +460,7 @@
   }
   /* background-clip: text prints as outlined boxes in Chromium PDFs */
   .d-num,
-  .slide .grad-text,
-  .slide .brand-word span {
+  .slide .grad-text {
     background: none;
     color: var(--ai);
   }

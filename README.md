@@ -19,6 +19,8 @@ Writes to the demo network go through an apply gateway after a human approves a 
 | `deploy/` | Cloud Run deployment script. |
 | `docs/` | Proposal, roadmap, deck PDF (`TwinOps_Deck.pdf`). |
 
+For how it works internally, what is real versus simulated, and the path to production, see the [Technical & Functional Guide](docs/TwinOps_Technical_and_Functional_Guide.md).
+
 ## Quick start
 
 Requires Python 3.12+, Node 23.6+ and, for the lab only, Docker.

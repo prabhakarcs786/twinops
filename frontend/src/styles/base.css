@@ -352,28 +352,46 @@ main:focus {
 }
 .brand {
   display: inline-flex;
+  width: fit-content;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
+  color: var(--text);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.brand-link {
+  flex-shrink: 0;
+}
+.brand-mark {
+  flex-shrink: 0;
+  overflow: visible;
+}
+.brand-mark-primary {
+  fill: var(--twin);
+}
+.brand-mark-secondary {
+  fill: var(--ai);
+}
+.brand-lockup {
+  display: grid;
+  gap: 0.3rem;
 }
 .brand-word {
-  font-weight: 800;
-  font-size: 1.15rem;
-  letter-spacing: -0.03em;
+  font-weight: 780;
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: -0.055em;
+  font-kerning: normal;
 }
 .brand-word span {
-  background: var(--grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-weight: 570;
+  letter-spacing: -0.045em;
 }
 .brand-tag {
-  font: 500 0.68rem/1 var(--mono);
-  letter-spacing: 0.12em;
+  font: 650 0.54rem/1 var(--font);
+  letter-spacing: 0.155em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
 }
 .app-crumb {
   font: 600 0.78rem/1 var(--mono);
@@ -415,8 +433,8 @@ main:focus {
 }
 
 @media (max-width: 1200px) {
-  .brand-tag {
-    display: none;
+  .site-header .brand-word {
+    font-size: 1.3rem;
   }
 }
 
