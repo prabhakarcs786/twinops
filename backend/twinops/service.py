@@ -13,9 +13,11 @@ from typing import Any
 
 from .config import Settings
 from .engine import new_incident_id, pick_fault
-from .harness import FAULT_INFO, ModelDemoNetwork
+from .harness import FAULT_INFO, VARIANTS, ModelDemoNetwork, ScenarioVariant
+from .memory import recall_candidates
 from .orchestrator import IncidentSession, decide, idle_frame, qa_context, run_incident
 from .planner.factory import build_planner
+from .planner.llm_client import OutageClient
 from .planner.runbook import RunbookPlanner
 from .store import IncidentStore
 from .topology import build_topology
@@ -112,7 +114,7 @@ class Registry:
     def active(self) -> int:
         return sum(1 for i in self.incidents.values() if i.session.status == "running")
 
-    async def _backends(self, topo: dict[str, Any], seed: int) -> tuple[Any, Any]:
+    async def _backends(self, topo: dict[str, Any], seed: int, variant: ScenarioVariant = "standard") -> tuple[Any, Any]:
         if self.settings.twin == "emulated":
             from .lab.backend import lab_backends
 
@@ -126,20 +128,28 @@ class Registry:
             except Exception:
                 self._lab_lock.release()
                 raise
-        return ModelDemoNetwork(topo, seed), ModelTwin()
+        return ModelDemoNetwork(topo, seed, variant), ModelTwin()
 
     def _release_lab(self) -> None:
         if self.settings.twin == "emulated" and self._lab_lock.locked():
             self._lab_lock.release()
 
-    async def create(self, pack: str, fault: str, seed: int | None, pace: float, include_evaluation_case: bool) -> LiveIncident:
+    async def create(self, pack: str, fault: str, seed: int | None, pace: float, include_evaluation_case: bool,
+                     variant: ScenarioVariant = "standard", use_memory: bool = True, simulate_outage: bool = False) -> LiveIncident:
+        if variant not in VARIANTS:
+            raise ValueError("unknown scenario variant")
+        if (variant != "standard" or simulate_outage) and (not self.settings.harness_enabled or self.settings.twin != "model"):
+            raise ValueError("scenario variants require the enabled model demo harness")
         if self.active() >= self.settings.max_active_runs:
             raise BusyError("too many investigations in progress")
         seed = seed if seed is not None else secrets.randbelow(100_000)
         topo = build_topology(pack)
-        demo, twin = await self._backends(topo, seed)
+        demo, twin = await self._backends(topo, seed, variant)
+        planner = build_planner("llm", settings=self.settings, client=OutageClient()) if simulate_outage else build_planner(settings=self.settings)
         session = IncidentSession(incident_id=new_incident_id(), sealed_fault=pick_fault(fault, seed), demo=demo, twin=twin,
-                                  planner=build_planner(settings=self.settings), pace=pace)
+                      planner=planner, pace=pace, exercise="provider_outage" if simulate_outage else "none")
+        if use_memory:
+            session.recall = lambda observation: recall_candidates(self.store.recent(), observation, topo, twin.backend, twin.supported_actions)
         live = LiveIncident(session=session, topo=topo, seed=seed)
         live.persist = lambda: self._persist(live)
         self.incidents[session.incident_id] = live
@@ -223,6 +233,19 @@ class Registry:
         if not live.session.run:
             raise ValueError("questions open once the verdict is in")
         return await planner.answer(question, qa_context(live.session.run, live.session.outcome))
+
+    def start_review(self, live: LiveIncident, candidate_id: str, mode: str) -> dict[str, Any]:
+        if not live.session.run:
+            raise ValueError("review trials open after the verdict")
+        candidate = next((candidate for candidate in live.session.run["candidates"] if candidate["change"]["id"] == candidate_id), None)
+        if candidate is None:
+            raise ValueError("unknown candidate")
+        return self.store.start_review({
+            "trialId": f"review-{secrets.token_hex(12)}", "incidentId": live.session.incident_id, "candidateId": candidate_id,
+            "changeHash": candidate["change"]["hash"], "snapshotHash": live.session.run["snapshotHash"],
+            "versions": live.session.run["versions"], "mode": mode,
+            "expectedDecision": "accept" if candidate["decision"] in ("pass", "pass_with_warnings") else "reject",
+        })
 
     def reveal(self, live: LiveIncident) -> dict[str, str]:
         if live.session.status == "running":

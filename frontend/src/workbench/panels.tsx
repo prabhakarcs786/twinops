@@ -166,7 +166,7 @@ export function CandidateBoard({ frame, onInspect }: { frame: Frame; onInspect: 
               </span>
               <span className="cand-meta">
                 <StatusChip tone={tone.tone}>{tone.text}</StatusChip>
-                {c.origin !== 'runbook' && <span className={`origin origin-${c.origin}`}>{c.origin === 'revision' ? 'revision' : c.origin === 'llm' ? 'model-proposed' : 'evaluation case'}</span>}
+                {c.origin !== 'runbook' && <span className={`origin origin-${c.origin}`}>{c.origin === 'revision' ? 'revision' : c.origin === 'llm' ? 'model-proposed' : c.origin === 'memory' ? 'historical fix' : 'evaluation case'}</span>}
               </span>
             </button>
           </li>

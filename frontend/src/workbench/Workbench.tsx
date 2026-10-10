@@ -7,13 +7,14 @@ import { FAULT_INFO, SUPPORTED_FAULTS } from '../engine/harness.ts';
 import { decide, idleFrame, simulateDrift, startIncident, VERDICT_LABEL, type IncidentSession } from '../engine/orchestrator.ts';
 import { PLANNER_MODE } from '../engine/planner.ts';
 import { buildTopology, PACK_OPTIONS } from '../engine/topology.ts';
-import type { FaultId, PackId, Phase, RunEvent } from '../engine/types.ts';
+import type { FaultId, PackId, Phase, RunEvent, ScenarioVariant } from '../engine/types.ts';
 import { useReducedMotion } from '../lib/hooks.ts';
 import { ApprovalDialog } from './ApprovalDialog.tsx';
 import { ModelThinking } from './AiTrace.tsx';
 import { CandidateComparison, EvidenceReplay, ImpactSummary } from './DecisionEvidence.tsx';
 import { IncidentHistory } from './IncidentHistory.tsx';
 import { BenchmarkPanel } from './BenchmarkPanel.tsx';
+import { ReviewMetrics } from './ReviewTrial.tsx';
 import { Evidence, type AskTarget, type EvidenceTab } from './Evidence.tsx';
 import { CandidateBoard, Counters, PhaseStepper, Stage, Timeline } from './panels.tsx';
 import { liveView, localView, type RunView } from './runView.ts';
@@ -95,7 +96,10 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
-  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('hypotheses');
+  const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('facts');
+  const [condition, setCondition] = useState<ScenarioVariant | 'provider_outage'>('standard');
+  const [useMemory, setUseMemory] = useState(true);
+  const [seedInput, setSeedInput] = useState('');
   const [drifted, setDrifted] = useState(false);
   const topo = useMemo(() => buildTopology(pack), [pack]);
   const engine: 'live' | 'local' = backend && enginePref === 'live' ? 'live' : 'local';
@@ -228,6 +232,11 @@ export function Workbench({ theme, onToggleTheme }: Props) {
 
 
   const breakNetwork = async () => {
+    const requestedSeed = seedInput.trim() ? Number(seedInput) : undefined;
+    if (requestedSeed !== undefined && (!Number.isInteger(requestedSeed) || requestedSeed < 0 || requestedSeed > 1_000_000)) {
+      setToast('Seed must be a whole number between 0 and 1000000.');
+      return;
+    }
     clearRunState();
     rememberIncident(null);
     if (engine === 'local') {
@@ -237,7 +246,10 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     setIncident(null);
     setStarting(true);
     try {
-      const created = await createLiveIncident({ pack, fault: faultChoice, pace: Number.isFinite(speed) ? speed : 0 });
+      const challengesAvailable = backend?.harness && backend.twin.backend === 'model';
+      const created = await createLiveIncident({ pack, fault: faultChoice, pace: Number.isFinite(speed) ? speed : 0, seed: requestedSeed,
+        useMemory, variant: challengesAvailable && condition !== 'provider_outage' ? condition : 'standard',
+        simulateOutage: Boolean(challengesAvailable && condition === 'provider_outage') });
       setIncident({ kind: 'live', id: created.incidentId, eventsUrl: created.eventsUrl, seed: created.seed, events: [], detail: null, ended: false, createdAt: created.createdAt });
       rememberIncident(created.incidentId);
     } catch (err) {
@@ -336,7 +348,9 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const twinLabel = backend?.twin.backend === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
   const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth);
   const thinking = current?.kind === 'model_call' ? current : undefined;
-  const ask: AskTarget | null = live && !live.detail?.recovered && backend?.planner.kind === 'llm' ? { incidentId: live.id, model: backend.planner.model, ready: Boolean(view) } : null;
+  const activePlanner = view?.run.planner ?? backend?.planner;
+  const ask: AskTarget | null = live && !live.detail?.recovered && activePlanner?.kind === 'llm' && activePlanner.provider !== 'simulated-outage'
+    ? { incidentId: live.id, model: activePlanner.model, ready: Boolean(view) } : null;
   const openAsk = () => {
     setEvidenceTab('ask');
     window.setTimeout(() => document.getElementById('ask-input')?.focus(), 50);
@@ -357,7 +371,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 <>
                   <StatusChip tone="ok">Live backend</StatusChip>
                   <span className="engine-detail">
-                    {backend.planner.kind === 'llm' ? `${backend.planner.provider} · ${backend.planner.model}` : 'runbook planner'} · {twinLabel} · server-side Proof Gate
+                    {activePlanner?.kind === 'llm' ? `${activePlanner.provider} · ${activePlanner.model}` : 'runbook planner'} · {twinLabel} · server-side Proof Gate
                   </span>
                 </>
               ) : (
@@ -380,7 +394,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           </div>
 
           <div className="wb-controls">
-            <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running}>
+            <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running || backend === undefined}>
               <span className="btn-break-glow" aria-hidden="true" />
               <Zap size={22} aria-hidden="true" />
               <span>{running ? 'Investigating…' : hasRun ? 'Break it again' : 'Break the network'}</span>
@@ -429,17 +443,33 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 </button>
               </div>
             </div>
+            {engine === 'live' && <details className="challenge-controls">
+              <summary>Challenge conditions &amp; memory</summary>
+              <div className="challenge-settings">
+                {backend?.harness && backend.twin.backend === 'model' && <label className="field"><span>Challenge conditions</span>
+                  <select value={condition} onChange={(event) => setCondition(event.target.value as ScenarioVariant | 'provider_outage')} disabled={running}>
+                    {(backend.variants ?? [{ id: 'standard', label: 'Standard fixture' }]).map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
+                    <option value="provider_outage">Simulated provider outage (no model call)</option>
+                  </select>
+                </label>}
+                <label className="field"><span>Seed (optional)</span><input type="number" inputMode="numeric" min={0} max={1000000} step={1} placeholder="Random" value={seedInput} onChange={(event) => setSeedInput(event.target.value)} disabled={running} /></label>
+                <label className="memory-toggle"><input type="checkbox" checked={useMemory} onChange={(event) => setUseMemory(event.target.checked)} disabled={running} />Retest compatible historical fixes</label>
+              </div>
+            </details>}
           </div>
         </section>
 
         <div className="workbench-toolbar">
           <button type="button" className="btn btn-ghost btn-sm" aria-pressed={presentation} onClick={() => setPresentation(!presentation)}>Presentation view</button>
           {backend && <IncidentHistory onResume={(id) => void resumeIncident(id)} disabled={running || starting} />}
+          {live && verdictVisible && backend?.harness && <a className="btn btn-ghost btn-sm" href={`/review?incident=${encodeURIComponent(live.id)}`} target="_blank" rel="noreferrer">Review trial (new tab)</a>}
           {live && <span className="connection-state" role="status">{live.ended ? 'Evidence synchronized' : streamState === 'connected' ? 'Live events connected' : streamState === 'reconnecting' ? 'Connection lost · reconnecting…' : 'Connecting to incident…'}</span>}
           {live && !live.ended && ['closed', 'reconnecting'].includes(streamState) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStreamAttempt((n) => n + 1)}>Reconnect</button>}
         </div>
         {resumeError && <div className="recovery-notice" role="alert"><p>{resumeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => void resumeIncident(live?.id ?? params.incident ?? '')}>Retry loading evidence</button></div>}
         {live?.detail?.recovered && <p className="recovery-notice">Saved evidence · {live.detail.outcome?.reason ?? 'This incident is complete and retained for review.'}</p>}
+        {view?.run.exercise === 'provider_outage' && <p className="recovery-notice" role="status">Simulated provider outage. No model request was sent; the runbook fallback was tested through the same gates.</p>}
+        {view?.run.variant && view.run.variant !== 'standard' && <p className="scenario-notice">Scenario variant: {backend?.variants?.find((variant) => variant.id === view.run.variant)?.label ?? view.run.variant.replaceAll('_', ' ')}</p>}
         <ImpactSummary frame={frame} view={view} ready={verdictVisible} />
         <div className="wb-grid">
             <div className="wb-metrics">
@@ -584,6 +614,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           decisionVisible={Boolean(outcome)}
         />
         {backend && <BenchmarkPanel />}
+        {backend?.harness && <ReviewMetrics />}
       </main>
 
       {view?.run.selected && (

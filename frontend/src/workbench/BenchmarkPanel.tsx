@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchReports, type EvaluationReport } from '../api/live.ts';
 
-const suiteKey = (r: EvaluationReport) => `${r.pack} · seeds ${r.startSeed}–${r.startSeed + r.seeds - 1} · ${r.suiteVersion}`;
+const suiteKey = (r: EvaluationReport) => `${r.pack} · ${(r.variant ?? 'standard').replaceAll('_', ' ')} · seeds ${r.startSeed}–${r.startSeed + r.seeds - 1} · ${r.suiteVersion}`;
 
 export function BenchmarkPanel() {
   const [reports, setReports] = useState<EvaluationReport[]>([]);
@@ -44,8 +44,8 @@ export function BenchmarkPanel() {
         <p className="muted">Measured {new Date(report.generatedAt).toLocaleString()} · {report.seeds} run{report.seeds === 1 ? '' : 's'} per fault · {report.planner.version}</p>
         <div className="table-wrap" role="region" aria-label={`${report.planner.kind} results`} tabIndex={0}>
           <table className="diff"><caption className="sr-only">Recorded evaluation results</caption>
-            <thead><tr><th scope="col">Fault</th><th scope="col">Expected verdict</th><th scope="col">Success without fallback</th><th scope="col">Unsafe passed</th><th scope="col">Abstentions</th><th scope="col">Median compute</th><th scope="col">Tokens</th><th scope="col">Fallback calls</th></tr></thead>
-            <tbody>{Object.entries(report.byFault).map(([fault, r]) => <tr key={fault}><th scope="row">{fault.replaceAll('_', ' ')}</th><td>{r.verdictOk}/{r.runs}</td><td>{r.fallbackFreeSuccess === undefined ? 'Not measured' : `${r.fallbackFreeSuccess}/${r.runs}`}</td><td>{r.unsafePassed}</td><td>{r.abstentions ?? 'Not measured'}</td><td>{(r.medianComputeMs / 1000).toFixed(2)} s</td><td>{r.tokens.toLocaleString()}</td><td>{r.fallbacks}</td></tr>)}</tbody>
+            <thead><tr><th scope="col">Fault</th><th scope="col">Expected verdict</th><th scope="col">Success without fallback</th><th scope="col">Unsafe passed</th><th scope="col">Abstentions</th><th scope="col">Median / p95 compute</th><th scope="col">Tokens</th><th scope="col">Fallback calls</th></tr></thead>
+            <tbody>{Object.entries(report.byFault).map(([fault, r]) => <tr key={fault}><th scope="row">{fault.replaceAll('_', ' ')}</th><td>{r.verdictOk}/{r.runs}</td><td>{r.fallbackFreeSuccess === undefined ? 'Not measured' : `${r.fallbackFreeSuccess}/${r.runs}`}</td><td>{r.unsafePassed}</td><td>{r.abstentions ?? 'Not measured'}</td><td>{(r.medianComputeMs / 1000).toFixed(2)} s / {r.p95ComputeMs === undefined ? 'Not measured' : `${(r.p95ComputeMs / 1000).toFixed(2)} s`}</td><td>{r.tokens.toLocaleString()}</td><td>{r.fallbacks}</td></tr>)}</tbody>
           </table>
         </div>
         <ul className="control-results">{report.controls.map((c) => <li key={c.id}><strong>{c.id}: {c.ok ? 'Passed' : 'Failed'}</strong> · {c.name ?? 'Adverse control'} · {c.scope === 'gateway' ? 'gateway control / runbook fixture' : c.scope ? `planner + gate / ${c.planner?.provider ?? c.planner?.kind}` : 'legacy report / planner attribution not recorded'}{c.fallbacks ? ` · ${c.fallbacks} fallback calls` : ''}</li>)}</ul>

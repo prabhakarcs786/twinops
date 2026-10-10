@@ -23,6 +23,9 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
         "planner": run["planner"],
         "versions": run["versions"],
         "seed": run["seed"],
+        "scenario_variant": run.get("variant", "standard"),
+        "exercise": run.get("exercise", "none"),
+        "incident_memory": run.get("memory", []),
         "captured_state_hash": run["snapshotHash"],
         "observation": {
             "failing_journeys": [{"id": p["id"], "detail": p["detail"]} for p in failing],
@@ -30,6 +33,7 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
             "raw_events": run["observation"]["rawEventCount"],
             "recent_changes": [f"{c['id']} {c['node']}: {c['summary']}" for c in run["observation"]["changes"] if c["minutesAgo"] <= 60],
             "quarantined_untrusted_text": [f"{lg['node']}: {lg['text']}" for lg in run["guardedLogs"] if lg["flagged"]],
+            "evidence_gaps": run["observation"].get("evidenceGaps", []),
         },
         "hypotheses": [{"rank": h["rank"], "title": h["title"], "supporting": h["supporting"], "contradicting": h["contradicting"]} for h in run["hypotheses"]],
         "reproduction": {
@@ -41,6 +45,7 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
         },
         "experiments": [{
             "id": c["change"]["id"], "label": c["change"]["label"], "origin": c["change"]["origin"],
+            "source_run_id": c["change"].get("sourceRunId"),
             "steps": [describe_step(s) for s in c["change"]["steps"]], "change_hash": c["change"]["hash"], "restored": c["restored"],
             "latency_delta_ms": c["latencyDeltaMs"], "decision": c["decision"],
             "gates": {g["id"]: f"{g['status']}: {g['reason']}" for g in c["gates"]},
@@ -80,6 +85,8 @@ td,th{{border:1px solid #ccd;padding:6px;vertical-align:top;text-align:left}}.no
 <h1>TwinOps Proof Pack</h1><p>{e(pack['incident_id'])} · generated {e(pack['generated_at'])} · seed {e(str(pack['seed']))}</p>
 <p class="v">{e(pack['verdict'])}</p><p class="note">{e(pack['scope_note'])}</p>
 <h2>Mode</h2><p>{e(pack['mode'])}</p>{pre(pack['versions'])}<p>Captured state <code>{e(pack['captured_state_hash'])}</code></p>
+<p>Scenario: {e(pack.get('scenario_variant', 'standard'))} · exercise: {e(pack.get('exercise', 'none'))}</p>
+{f"<h2>Historical fix provenance (fresh tests required)</h2>{pre(pack['incident_memory'])}" if pack.get('incident_memory') else ''}
 {f"<h2>Approver briefing (AI-drafted, non-authoritative)</h2><p>{e(narrative.get('summary', ''))}</p>" if narrative else ''}
 <h2>Observation</h2>{pre(pack['observation'])}<h2>Hypotheses</h2>{pre(pack['hypotheses'])}<h2>Reproduction</h2>{pre(pack['reproduction'])}
 <h2>Experiments</h2><table><thead><tr><th>Candidate</th><th>Origin</th><th>Restored</th><th>Decision</th><th>Hash</th><th>Gates</th></tr></thead><tbody>{rows}</tbody></table>

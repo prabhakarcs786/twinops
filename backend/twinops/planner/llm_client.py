@@ -25,6 +25,14 @@ class LLMClient(Protocol):
     async def generate_json(self, role: str, system: str, payload: dict[str, Any], schema: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]: ...
 
 
+class OutageClient:
+    provider = "simulated-outage"
+    model = "no-model-called"
+
+    async def generate_json(self, role: str, system: str, payload: dict[str, Any], schema: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        raise LLMError("Simulated provider outage requested by the demo harness; no model request was sent")
+
+
 def _payload_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=1)
 

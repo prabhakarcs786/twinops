@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from .catalogue import apply_change_set
 from .hashing import hash_of
@@ -12,6 +12,9 @@ from .topology import Topology, journey_by_id, pop_by_index
 
 SUPPORTED_FAULTS = ["route_misconfig", "dns_failure", "cert_expiry"]
 ALL_FAULTS = [*SUPPORTED_FAULTS, "unsupported_link_flap"]
+ScenarioVariant = Literal["standard", "changed_config", "noisy_evidence", "missing_history"]
+VARIANTS = {"standard": "Standard fixture", "changed_config": "Changed rule ordering",
+            "noisy_evidence": "Noisy, instruction-like evidence", "missing_history": "Missing change history"}
 
 FAULT_INFO: dict[str, dict[str, str]] = {
     "route_misconfig": {"code": "F1", "label": "Route misconfiguration", "description": "An automated edge prefix-list change on the core router."},
@@ -37,14 +40,14 @@ def base_history(topo: Topology) -> list[dict[str, Any]]:
     ]
 
 
-def fault_records(topo: Topology, fault: str, rng: Rng, state: State) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def fault_records(topo: Topology, fault: str, rng: Rng, state: State, sequence_offset: int = 0) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Mutates `state` with the fault and returns (changes, logs, hardware alarms). Shared by model and lab harnesses."""
     p1, p2, p3 = pop_by_index(topo, 1), pop_by_index(topo, 2), pop_by_index(topo, 3)
     changes: list[dict[str, Any]] = []
     logs: list[dict[str, Any]] = []
     hardware: list[dict[str, Any]] = []
     if fault == "route_misconfig":
-        seq = rng.pick([30, 40, 50])
+        seq = rng.pick([30, 40, 50]) + sequence_offset
         state["b17"]["prefixList"].append({"seq": seq, "action": "deny", "prefix": "10.20.0.0/15", "note": "block lab range"})
         state["b17"]["revision"] = "r-2042"
         changes.append({"id": "r-2042", "node": "B17", "minutesAgo": rng.int(3, 7), "author": "automation pipeline",
@@ -98,10 +101,18 @@ class ModelDemoNetwork:
 
     backend = "model"
 
-    def __init__(self, topo: Topology, seed: int) -> None:
+    def __init__(self, topo: Topology, seed: int, variant: ScenarioVariant = "standard") -> None:
+        if variant not in VARIANTS:
+            raise ValueError("unknown scenario variant")
+        self.variant = variant
         self.topo = topo
         self.writes: list[dict[str, Any]] = []
         self._state = healthy_state(topo)
+        if variant == "changed_config":
+            for config in [self._state["b17"], *self._state["archive"].values()]:
+                for rule in config["prefixList"]:
+                    if rule["action"] == "permit":
+                        rule["seq"] += 800
         self._rng = Rng(seed)
         self._changes = base_history(topo)
         self._logs: list[dict[str, Any]] = []
@@ -115,10 +126,14 @@ class ModelDemoNetwork:
         self.writes.append(entry)
 
     async def inject_fault(self, fault: str) -> None:
-        changes, logs, hardware = fault_records(self.topo, fault, self._rng, self._state)
+        changes, logs, hardware = fault_records(self.topo, fault, self._rng, self._state, 200 if self.variant == "changed_config" else 0)
         self._changes.extend(changes)
         self._logs.extend(logs)
         self._hardware.extend(hardware)
+        if self.variant == "noisy_evidence":
+            self._logs.extend({"id": f"LOG-NOISE-{index}", **entry} for index, entry in enumerate(INJECTIONS))
+            self._logs.append({"id": "LOG-HEALTH", "node": "B17", "text": "Temperature 61 C; alert threshold 70 C. CPU utilization 31%."})
+            self._logs.reverse()
         self._record("harness", "fault injected by demo harness (label sealed)")
 
     async def observe(self) -> dict[str, Any]:
@@ -130,8 +145,10 @@ class ModelDemoNetwork:
             "stateHash": await self.state_hash(),
             "probes": probes,
             "alarms": alarms,
-            "changes": sorted(self._changes, key=lambda c: c["minutesAgo"]),
+            "changes": [] if self.variant == "missing_history" else sorted(self._changes, key=lambda c: c["minutesAgo"]),
             "logs": list(self._logs),
+            "evidenceGaps": ["Change-history collector unavailable; the absence of change records does not prove no changes occurred."]
+            if self.variant == "missing_history" else [],
             "rawEventCount": sum(a["count"] for a in alarms),
             "baselines": dict(self._baselines),
         }

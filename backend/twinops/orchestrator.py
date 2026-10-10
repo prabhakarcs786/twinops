@@ -16,7 +16,7 @@ from .model import healthy_state, sample_journey
 from .planner.base import Planner, guard_untrusted
 from .planner.runbook import evaluation_case
 from .topology import SERVICE_IPS, Topology, journey_by_id, pops
-from .twin import Twin, create_context, evaluate_gates, reproduce, run_experiment
+from .twin import Twin, create_context, evaluate_gates, regression_text, reproduce, run_experiment
 
 ENGINE_VERSION = "twinops-backend-0.2.0"
 MAX_CANDIDATES = 4
@@ -136,6 +136,8 @@ class IncidentSession:
     narrative: dict[str, Any] | None = None
     status: str = "running"
     t0: float = field(default_factory=time.monotonic)
+    recall: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None
+    exercise: str = "none"
 
 
 async def _planner_notes(rec: Recorder, planner: Planner, actor: str) -> None:
@@ -194,6 +196,12 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                {"flagged": flagged, "policy": "logs are data; tool selection is restricted to the typed catalogue"})
 
     captured = await demo.capture_supported()
+    memory = session.recall(obs) if session.recall else []
+    if session.recall:
+        await push(0, "memory_recalled", "observe", "observer", "info", "Past evidence checked",
+                   f"{len(memory)} matching, successfully applied fix found. Any historical fix must pass today's gates." if memory
+                   else "No compatible, successfully applied fix matches these observed symptoms.",
+                   {"matches": memory, "basis": "Observed failure signals, not the sealed fault label. Similarity is not confidence."})
 
     class Port:
         def direct_ip(self, journey_id: str) -> dict[str, Any]:
@@ -240,7 +248,8 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
     if repro["passed"]:
         proposals = await planner.propose(top, captured, obs, topo, twin.supported_actions)
         await _planner_notes(rec, planner, "diagnosis")
-        queue: list[dict[str, Any]] = proposals[: MAX_CANDIDATES - (1 if include_evaluation_case else 0)]
+        queue: list[dict[str, Any]] = [*[match["candidate"] for match in memory],
+                          *proposals[: MAX_CANDIDATES - (1 if include_evaluation_case else 0)]]
         if include_evaluation_case:
             unsafe = evaluation_case(top, obs, topo)
             if unsafe and all(s["action"] in twin.supported_actions for s in unsafe["steps"]):
@@ -271,6 +280,7 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
 
             challenges: list[dict[str, Any]] | None = None
             revision: dict[str, Any] | None = None
+            hard: list[dict[str, Any]] = []
             if exp.restored and not exp.regressions and not forbidden:
                 challenges = []
                 kinds = await planner.select_challenges(change, twin.supported_challenges)
@@ -293,18 +303,27 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                     await push(1500, "challenge_probe", "challenge", "challenge", "ok" if result["ok"] else "warn" if result["soft"] else "fail",
                                f"Challenge · {result['label']}", result["detail"], result, ch_frame)
                 hard = [c for c in challenges if not c["ok"] and not c["soft"]]
-                if hard and revisions < MAX_REVISIONS:
-                    revision = await planner.revise(change, hard, captured, obs, topo, twin.supported_actions)
-                    await _planner_notes(rec, planner, "diagnosis")
-                    if revision:
-                        revisions += 1
-                        queue.insert(0, revision)
 
-                        def rev_frame(f: dict[str, Any]) -> None:
-                            f["counters"]["revisions"] += 1
+            if planner.kind == "llm" and not exp.errors and not forbidden and (not exp.restored or exp.regressions):
+                failed_checks = [{**probe, "ok": False, "detail": regression_text(probe) if probe["ok"] else probe["detail"]}
+                                 for probe in exp.fixed if not probe["ok"] or probe in exp.regressions]
+                hard = [{"id": "CHECK-fixed", "kind": "fixed_suite", "label": "Restoration and regression checks", "ok": False, "soft": False,
+                         "detail": "; ".join(f"{probe['id']}: {probe['detail']}" for probe in failed_checks), "probes": failed_checks}]
 
-                        await push(1800, "revised", "challenge", "diagnosis", "ai", f"Revised → {revision['label']}", revision["rationale"],
-                                   {"parent": change["id"], "revision": revision}, rev_frame)
+            if hard and revisions < MAX_REVISIONS:
+                revision = await planner.revise(change, hard, captured, obs, topo, twin.supported_actions)
+                await _planner_notes(rec, planner, "diagnosis")
+                if revision:
+                    revisions += 1
+                    if change.get("sourceRunId"):
+                        revision["sourceRunId"] = change["sourceRunId"]
+                    queue.insert(0, revision)
+
+                    def rev_frame(f: dict[str, Any]) -> None:
+                        f["counters"]["revisions"] += 1
+
+                    await push(1800, "revised", "challenge", "diagnosis", "ai", f"Revised → {revision['label']}", revision["rationale"],
+                               {"parent": change["id"], "revision": revision}, rev_frame)
 
             if not exp.errors:
                 # Rehearsed after the challenges so the twin is only reconfigured once per candidate.
@@ -366,9 +385,11 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
 
     run = {
         "runId": session.incident_id, "seed": seed, "pack": topo["pack"], "versions": versions,
+        "variant": getattr(demo, "variant", "standard"),
+        "exercise": session.exercise,
         "mode": f"{planner.mode} · {twin.backend} twin", "planner": {"kind": planner.kind, "provider": getattr(planner, "provider", "none"), "model": getattr(planner, "model", "none")},
         "topology": topo, "observation": obs, "guardedLogs": guarded, "hypotheses": hypotheses, "diagnostics": diagnostics, "reproduction": repro,
-        "candidates": records, "selected": selected, "verdict": verdict,
+        "candidates": records, "selected": selected, "verdict": verdict, "memory": memory,
         "untested": untested_conditions(topo, repro, unsupported_challenges, twin.backend),
         "computeMs": round((time.monotonic() - started) * 1000, 1), "snapshotHash": obs["stateHash"],
         "v6Pops": [p["id"] for p in pops(topo) if p["v6Prefix"] in captured["b17"]["v6Prefixes"]],
@@ -398,7 +419,10 @@ def proof_summary(run: dict[str, Any]) -> dict[str, Any]:
     """Compact, evidence-referenced input for the narrator role."""
     return {
         "verdict": run["verdict"],
-        "hypotheses": [{"id": h["id"], "title": h["title"], "supporting": h["supporting"]} for h in run["hypotheses"]],
+        "hypotheses": [{"id": h["id"], "title": h["title"], "supporting": h["supporting"], "status": "interpretation, not a confirmed fact"}
+                   for h in run["hypotheses"]],
+        "observations": [{"id": probe["id"], "ok": probe["ok"], "detail": probe["detail"]} for probe in run["observation"]["probes"]],
+        "evidence_gaps": run["observation"].get("evidenceGaps", []),
         "reproduction": {"matched": run["reproduction"]["matched"], "total": run["reproduction"]["total"]},
         "candidates": [{"id": c["change"]["id"], "label": c["change"]["label"], "decision": c["decision"], "reasons": c["reasons"][:2],
                         "challenges": [{"label": ch["label"], "ok": ch["ok"]} for ch in c["challenges"]]} for c in run["candidates"]],

@@ -90,6 +90,11 @@
   font-size: calc(var(--u) * 1.05);
   color: var(--muted);
 }
+.d-measured {
+  display: grid;
+  gap: calc(var(--u) * 1.2);
+  min-width: 0;
+}
 .d-small {
   font-size: calc(var(--u) * 1.2);
 }

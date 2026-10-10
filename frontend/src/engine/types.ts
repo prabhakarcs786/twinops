@@ -101,6 +101,7 @@ export interface LogLine {
 }
 
 export interface Observation {
+  evidenceGaps?: string[];
   capturedAt: string;
   stateHash: string;
   probes: ProbeResult[];
@@ -153,7 +154,8 @@ export interface ActionStep {
   params: Record<string, ParamValue>;
 }
 
-export type CandidateOrigin = 'runbook' | 'llm' | 'revision' | 'evaluation_case';
+export type CandidateOrigin = 'runbook' | 'llm' | 'revision' | 'evaluation_case' | 'memory';
+export type ScenarioVariant = 'standard' | 'changed_config' | 'noisy_evidence' | 'missing_history';
 
 export interface ChangeSet {
   id: string;
@@ -161,8 +163,21 @@ export interface ChangeSet {
   steps: ActionStep[];
   origin: CandidateOrigin;
   parentId?: string;
+  sourceRunId?: string;
   rationale: string;
   hash: string;
+}
+
+export interface MemoryMatch {
+  sourceRunId: string;
+  sourceCreatedAt: number;
+  sourceBackend: string;
+  sourceLabel: string;
+  sourceChangeHash: string;
+  sameSnapshot: boolean;
+  matchedSignals: string[];
+  signalCount: number;
+  candidate: ChangeSet;
 }
 
 export interface DiffLine {
@@ -265,6 +280,7 @@ export type EventKind =
   | 'recovery_required'
   | 'planner_note'
   | 'model_call'
+  | 'memory_recalled'
   | 'narrative'
   | 'run_failed';
 
@@ -324,6 +340,7 @@ export interface RunEvent {
 }
 
 export interface Versions {
+  twin?: 'model' | 'emulated';
   engine: string;
   topology: string;
   catalogue: string;

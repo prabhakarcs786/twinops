@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .config import Settings
-from .harness import ALL_FAULTS, FAULT_INFO, SUPPORTED_FAULTS
+from .harness import ALL_FAULTS, FAULT_INFO, SUPPORTED_FAULTS, VARIANTS, ScenarioVariant
 from .planner.llm_client import LLMError
 from .proofpack import build_proof_pack, proof_pack_html
 from .service import BusyError, LiveIncident, Registry
@@ -36,6 +36,9 @@ class IncidentRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=1_000_000)
     pace: float = Field(default=1.0, ge=0, le=8)
     includeEvaluationCase: bool = True
+    variant: ScenarioVariant = "standard"
+    useMemory: bool = True
+    simulateOutage: bool = False
 
 
 class DecisionRequest(BaseModel):
@@ -46,6 +49,15 @@ class DecisionRequest(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=400)
+
+
+class ReviewRequest(BaseModel):
+    candidateId: str = Field(min_length=1, max_length=64)
+    mode: Literal["raw", "proof"]
+
+
+class ReviewDecision(BaseModel):
+    decision: Literal["accept", "reject", "more_evidence"]
 
 
 class RateLimiter:
@@ -69,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     registry = Registry(settings)
     limiter = RateLimiter(settings.rate_limit_per_min)
     ask_limiter = RateLimiter(max(6, settings.rate_limit_per_min), "questions")
+    review_limiter = RateLimiter(max(6, settings.rate_limit_per_min), "review trials")
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -135,15 +148,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "approvalAuth": settings.operator_token is not None,
             "harness": settings.harness_enabled,
             "activeRuns": registry.active(),
+            "variants": [{"id": variant, "label": label} for variant, label in VARIANTS.items()]
+            if settings.harness_enabled and settings.twin == "model" else [],
         }
 
     @app.post("/api/incidents", status_code=202)
     async def create_incident(body: IncidentRequest, request: Request) -> dict[str, Any]:
         limiter.check(request.client.host if request.client else "unknown")
         try:
-            live = await registry.create(body.pack, body.fault, body.seed, body.pace, body.includeEvaluationCase)
+            live = await registry.create(body.pack, body.fault, body.seed, body.pace, body.includeEvaluationCase, body.variant, body.useMemory, body.simulateOutage)
         except BusyError as exc:
             raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         iid = live.session.incident_id
         return {"incidentId": iid, "seed": live.seed, "eventsUrl": f"/api/incidents/{iid}/events", "createdAt": live.created}
 
@@ -236,6 +253,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return HTMLResponse(proof_pack_html(pack), headers={**disposition, "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
         return JSONResponse(pack, headers=disposition)
 
+    @app.post("/api/incidents/{incident_id}/review-trials", status_code=201)
+    async def start_review(incident_id: str, body: ReviewRequest, request: Request) -> dict[str, Any]:
+        if not settings.harness_enabled:
+            raise HTTPException(403, "demo review trials disabled")
+        review_limiter.check(request.client.host if request.client else "unknown")
+        try:
+            return registry.start_review(get_live(incident_id), body.candidateId, body.mode)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/review-trials/{trial_id}/decision")
+    async def finish_review(trial_id: str, body: ReviewDecision) -> dict[str, Any]:
+        if not settings.harness_enabled:
+            raise HTTPException(403, "demo review trials disabled")
+        try:
+            return registry.store.finish_review(trial_id, body.decision)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/review-trials/summary")
+    async def review_summary() -> dict[str, Any]:
+        return registry.store.review_summary()
+
+    @app.get("/api/review-trials")
+    async def review_results() -> Response:
+        return JSONResponse(registry.store.review_results(), headers={"Content-Disposition": 'attachment; filename="twinops-review-trials.json"'})
+
     @app.get("/api/evaluation/reports")
     async def reports() -> list[dict[str, Any]]:
         folder = settings.data_dir / "reports"
@@ -246,7 +290,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 out.append({"name": path.stem, "generatedAt": data["generatedAt"], "planner": data["planner"], "seeds": data["seeds"],
                             "byFault": data["byFault"], "controls": [{k: v for k, v in c.items() if k != "modelEvidence"} for c in data["controls"]],
                             "pack": data.get("pack", "core"), "startSeed": data.get("startSeed", 1), "suiteVersion": data.get("suiteVersion", "legacy"),
-                            "note": data.get("note", ""), "durationS": data.get("durationS")})
+                            "note": data.get("note", ""), "durationS": data.get("durationS"), "variant": data.get("variant", "standard")})
         return out
 
     static_dir = settings.static_dir

@@ -16,12 +16,14 @@ import type {
   Frame,
   Hypothesis,
   LogLine,
+  MemoryMatch,
   Observation,
   PackId,
   Phase,
   ProbeResult,
   Reproduction,
   RunEvent,
+  ScenarioVariant,
   Tone,
   Topology,
   Verdict,
@@ -49,6 +51,9 @@ export interface RunOptions {
 
 export interface RunResult {
   runId: string;
+  variant?: ScenarioVariant;
+  exercise?: 'none' | 'provider_outage';
+  planner?: { kind: string; provider: string; model: string };
   seed: number;
   pack: PackId;
   versions: Versions;
@@ -60,6 +65,7 @@ export interface RunResult {
   diagnostics: ProbeResult[];
   reproduction: Reproduction;
   candidates: CandidateRecord[];
+  memory?: MemoryMatch[];
   selected?: CandidateRecord;
   verdict: Verdict;
   untested: string[];

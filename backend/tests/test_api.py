@@ -71,6 +71,23 @@ def test_ask_requires_an_llm_planner(client):
     assert client.post(f"/api/incidents/{created['incidentId']}/ask", json={"question": "x" * 401}).status_code == 422
 
 
+def test_outage_exercise_is_labelled_and_falls_back_without_external_calls(client):
+    created = client.post("/api/incidents", json={"fault": "dns_failure", "seed": 7, "pace": 0, "simulateOutage": True, "useMemory": False}).json()
+    events = read_events(client, created["eventsUrl"])
+    detail = client.get(f"/api/incidents/{created['incidentId']}").json()
+    assert detail["run"]["exercise"] == "provider_outage"
+    assert detail["run"]["planner"]["provider"] == "simulated-outage"
+    assert detail["run"]["verdict"] == "PASS_UNDER_DEFINED_TESTS"
+    assert detail["run"]["writesDuringDiagnosis"] == 0 and detail["approval"] is None
+    assert any(event["kind"] == "planner_note" and event["raw"]["fallback"] for event in events)
+
+
+def test_extra_challenges_cannot_run_when_harness_is_disabled(tmp_path):
+    with TestClient(create_app(Settings(planner="runbook", harness_enabled=False, data_dir=tmp_path))) as client:
+        assert client.post("/api/incidents", json={"simulateOutage": True}).status_code == 400
+        assert client.post("/api/incidents", json={"variant": "noisy_evidence"}).status_code == 400
+
+
 def test_validation_rejects_bad_input(client):
     assert client.post("/api/incidents", json={"fault": "drop_tables"}).status_code == 422
     created = client.post("/api/incidents", json={"fault": "dns_failure", "seed": 2, "pace": 0}).json()

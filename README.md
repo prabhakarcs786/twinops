@@ -48,7 +48,21 @@ Without a backend, the workbench runs its in-browser engine automatically. `?eng
 
 The workbench includes a presentation view, measured service impact with tested-slice coverage, a candidate comparison, an evidence replay, and source observations behind hypotheses. Live incident URLs retain the incident ID so refresh resumes the same investigation. **Recent incidents** opens saved evidence; **Planner benchmark** compares reports for matching topology packs and seed ranges. The elapsed timer keeps running while a model call or event stream is quiet.
 
+**Facts & scope** separates observed probes, interpreted hypotheses, deterministic test results and untested conditions. Source IDs identify evidence; they do not prove every sentence an AI writes. The planner now receives failed restoration and regression probes as revision feedback, not only failed challenges. At most two revisions run through the full tests again.
+
+**Memory** retrieves at most one compatible, successfully applied historical fix using matching observed failure signals. It never uses the sealed fault label. Pack, backend, topology, catalogue and policy versions must match. The fix is tested as a new candidate, with current rollback checks and a new approval decision. A matching symptom does not establish that yesterday's fix works today. Memory provenance is included in the Proof Pack.
+
+**Challenge conditions & memory** offers repeatable seeds, memory on/off, changed rule ordering, noisy instruction-like logs, missing change history and a simulated provider outage. Extra challenge conditions are restricted to the enabled model demo harness. The outage exercise sends no request to the LLM and labels the runbook fallback explicitly. Target drift remains available while awaiting approval.
+
+For the memory demonstration: run and approve an F1 incident with a fixed seed, select **Changed rule ordering**, then run the same seed again. The Memory view shows why the previous fix no longer restores service; today's alternatives still need fresh tests and approval.
+
 Evidence is committed to `TWINOPS_DATA_DIR/incidents.sqlite3` before events are published. Completed runs, approvals, write logs and Proof Packs survive a process restart on the same disk. Unfinished investigations become read-only on restart: outstanding approvals expire, and an interrupted apply is marked `recovery_required`. Archived runs must be investigated again before any new approval.
+
+### Operator review trials
+
+After a verdict, **Review trial** opens a separate, read-only task. A participant reviews the same candidate using raw observations or its Proof Pack, then records **Accept**, **Reject** or **Need more evidence**. Server-measured duration and agreement with the recorded gate are saved without names, comments, approval tokens or network writes.
+
+The measurement panel compares only incident/candidate tasks reviewed in both conditions and exports the individual trials. These are exploratory, anonymous measurements: repeat participation, prior exposure and order effects are not controlled. Gate agreement is not production safety. Automated tests do not count as human-study evidence, and no time savings are claimed before real participants complete trials. Arrange counterbalanced tasks with different engineers for a pilot; do not reuse a task a participant has already seen as a blind comparison.
 
 ## Configuration (`.env`)
 
@@ -99,6 +113,10 @@ PYTHONPATH=backend .venv/bin/python -m twinops.evaluation --planner llm --compar
 ```
 
 This writes `comparison-runbook.json` and `comparison-llm.json`. Reports are served at `GET /api/evaluation/reports` and shown in the workbench. They distinguish verdict success from success without fallback, and report abstentions, unsafe passes, tokens, latency and fallback counts. Unsupported-fault and injected-log controls use the chosen planner and include its provenance; approval/schema controls intentionally use the deterministic runbook. Seeds vary a synthetic topology fixture, so these results are not production reliability estimates. A one-seed run is only a smoke check.
+
+To test configuration and evidence changes independently of the seed, repeat with `--variant changed_config`, `--variant noisy_evidence` or `--variant missing_history` and use a distinct output filename. Benchmark rows match pack, variant, seed range and evaluation version; they include median/p95 compute and model-authored revisions. Freeze prompts before a reserved evaluation range. These variants still use a fixed synthetic topology and are not arbitrary-network generalization tests. Memory is disabled in planner evaluations to avoid contamination from earlier incidents.
+
+The backend suite includes a 20-incident synthetic rehearsal across the scenario variants, checking approval, post-checks and safe escalation. This is not a 20-run Containerlab or live-LLM soak result.
 
 ## Emulated lab (Containerlab)
 
@@ -157,6 +175,12 @@ Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
 | `GET /api/incidents/{id}/reveal` | Sealed fault label, only after the verdict |
 | `GET /api/incidents/{id}/proof-pack?format=json\|html` | Proof Pack export (HTML is served sandboxed) |
 | `GET /api/evaluation/reports` | Evaluation summaries and control provenance |
+| `POST /api/incidents/{id}/review-trials` | Start a read-only timed review: `{candidateId, mode: "raw"\|"proof"}` |
+| `POST /api/review-trials/{id}/decision` | Record review choice, not approval: `accept`, `reject`, `more_evidence` |
+| `GET /api/review-trials/summary` | Anonymous matched-task review timings and gate agreement |
+| `GET /api/review-trials` | Download individual trial measurements |
+
+Incident creation also accepts `variant`, `useMemory` (default true), and `simulateOutage` (default false). Extra variants and outage simulation require the model demo harness.
 
 Hardening:
 
@@ -189,5 +213,7 @@ cd frontend && npm run test:live    # real FastAPI: SSE, approval, refresh/histo
 ## Pitch deck
 
 Open `/deck`. Use arrow keys to move between slides and **Save as PDF** to export. To regenerate `docs/TwinOps_Deck.pdf`, run `npm run preview` and then `npm run export:deck` (both in `frontend/`).
+
+The deck loads the latest compatible saved planner comparison when connected to the backend. For an evidence-backed PDF from the development server, run `npm --prefix frontend run export:deck -- http://localhost:5173/deck`. Without report access it states that paired evidence is unavailable. Historic lab timings are labelled with their run date; Gemini and Cloud Run deployment remain unverified until actually exercised.
 
 Workbench URL options: `?fault=route_misconfig|dns_failure|cert_expiry|unsupported_link_flap`, `?speed=instant`, `?autostart=1`, `?pack=enterprise`, `?engine=local`, `?view=presentation`, `?incident=<saved-id>`.

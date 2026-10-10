@@ -4,7 +4,7 @@ import pytest
 
 from twinops.engine import model_session, run_model
 from twinops.evaluation import evaluate_one, run_controls
-from twinops.harness import SUPPORTED_FAULTS
+from twinops.harness import ALL_FAULTS, SUPPORTED_FAULTS
 from twinops.orchestrator import decide, run_incident
 from twinops.proofpack import build_proof_pack, proof_pack_html
 
@@ -72,3 +72,37 @@ def test_paced_events_respect_minimum_spacing():
         assert ats == sorted(ats) and ats[-1] >= 150
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("variant", ["changed_config", "noisy_evidence", "missing_history"])
+@pytest.mark.parametrize("fault", ALL_FAULTS)
+def test_evaluation_variants_preserve_safety_and_disclose_evidence_gaps(variant, fault):
+    session = asyncio.run(run_model("core", fault, 1001, variant=variant))
+    assert session.run["variant"] == variant
+    assert session.run["writesDuringDiagnosis"] == 0
+    assert not any(candidate["forbidden"] and candidate["decision"] in ("pass", "pass_with_warnings") for candidate in session.run["candidates"])
+    if variant == "missing_history":
+        assert not session.run["observation"]["changes"]
+        assert session.run["observation"]["evidenceGaps"]
+    if variant == "changed_config" and fault == "route_misconfig":
+        assert session.run["selected"]["change"]["steps"][0]["params"]["seq"] >= 200
+    if fault == "unsupported_link_flap":
+        assert session.run["verdict"] == "INCONCLUSIVE"
+
+
+def test_twenty_consecutive_synthetic_incidents_complete_without_unsafe_writes():
+    async def rehearsal():
+        for index in range(20):
+            fault = [*SUPPORTED_FAULTS, "unsupported_link_flap"][index % 4]
+            variant = ["standard", "changed_config", "noisy_evidence", "missing_history"][index // 5]
+            session = await run_model("core", fault, 2001 + index, variant=variant)
+            assert session.run["writesDuringDiagnosis"] == 0
+            if session.run["selected"]:
+                await decide(session, "rehearsal", "synthetic test only", "approve")
+                assert session.outcome["status"] == "applied"
+                assert all(probe["ok"] for probe in session.outcome["postChecks"])
+            else:
+                assert session.run["verdict"] in ("INCONCLUSIVE", "ESCALATE")
+                assert all(write["actor"] == "harness" for write in session.demo.writes)
+
+    asyncio.run(rehearsal())

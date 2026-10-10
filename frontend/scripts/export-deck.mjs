@@ -11,6 +11,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   await page.emulateMedia({ media: 'print', reducedMotion: 'reduce' });
   await page.goto(url, { waitUntil: 'networkidle' });
+  await page.locator('[data-evidence-ready="true"]').waitFor();
   await page.evaluate(() => document.fonts.ready);
   await page.pdf({ path: out, preferCSSPageSize: true, printBackground: true });
   console.log(`Deck written to ${out}`);

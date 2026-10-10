@@ -1,5 +1,5 @@
 import type { ApplyOutcome, RunResult } from '../engine/orchestrator.ts';
-import type { ApprovalRecord, FaultId, PackId, RunEvent } from '../engine/types.ts';
+import type { ApprovalRecord, FaultId, PackId, RunEvent, ScenarioVariant } from '../engine/types.ts';
 
 /** Client for the TwinOps backend (FastAPI + SSE). Same event and run shapes as the in-browser engine. */
 
@@ -9,6 +9,7 @@ export interface BackendConfig {
   twin: { backend: 'model' | 'emulated'; ready: boolean; detail: string };
   approvalAuth: boolean;
   harness: boolean;
+  variants?: { id: ScenarioVariant; label: string }[];
 }
 
 export interface Narrative {
@@ -72,7 +73,7 @@ export async function fetchConfig(timeoutMs = 1500): Promise<BackendConfig | nul
   }
 }
 
-export const createIncident = (body: { pack: PackId; fault: 'random' | FaultId; pace: number }) =>
+export const createIncident = (body: { pack: PackId; fault: 'random' | FaultId; pace: number; seed?: number; variant?: ScenarioVariant; useMemory?: boolean; simulateOutage?: boolean }) =>
   json<{ incidentId: string; seed: number; eventsUrl: string; createdAt: number }>('/api/incidents', { method: 'POST', body: JSON.stringify(body) });
 
 export const getIncident = (id: string) => json<LiveIncident>(`/api/incidents/${encodeURIComponent(id)}`);
@@ -104,6 +105,23 @@ export const askIncident = (id: string, question: string) =>
 
 export const proofPackUrl = (id: string, format: 'json' | 'html') => `${API}/api/incidents/${encodeURIComponent(id)}/proof-pack?format=${format}`;
 
+export type ReviewMode = 'raw' | 'proof';
+export type ReviewDecision = 'accept' | 'reject' | 'more_evidence';
+export interface ReviewStarted { trialId: string; startedAt: number; mode: ReviewMode; candidateId: string }
+export interface ReviewResult extends ReviewStarted { decision: ReviewDecision; elapsedMs: number; gateAgreement: boolean; expectedDecision: ReviewDecision }
+export interface ReviewSummary {
+  totalTrials: number;
+  pairedTasks: number;
+  modes: { mode: ReviewMode; trials: number; gateAgreements: number; medianMs: number | null }[];
+  note: string;
+}
+export const startReview = (id: string, candidateId: string, mode: ReviewMode) =>
+  json<ReviewStarted>(`/api/incidents/${encodeURIComponent(id)}/review-trials`, { method: 'POST', body: JSON.stringify({ candidateId, mode }) });
+export const finishReview = (id: string, decision: ReviewDecision) =>
+  json<ReviewResult>(`/api/review-trials/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify({ decision }) });
+export const fetchReviewSummary = () => json<ReviewSummary>('/api/review-trials/summary');
+export const reviewExportUrl = `${API}/api/review-trials`;
+
 export interface EvaluationReport {
   name: string;
   generatedAt: string;
@@ -112,8 +130,9 @@ export interface EvaluationReport {
   pack: string;
   startSeed: number;
   suiteVersion: string;
+  variant?: ScenarioVariant;
   note: string;
-  byFault: Record<string, { runs: number; top1: number; top3: number; verdictOk: number; fallbackFreeSuccess?: number; abstentions?: number; unsafePassed: number; fallbacks: number; rejectedOutputs: number; modelCalls: number; tokens: number; medianComputeMs: number }>;
+  byFault: Record<string, { runs: number; top1: number; top3: number; verdictOk: number; fallbackFreeSuccess?: number; abstentions?: number; unsafePassed: number; fallbacks: number; rejectedOutputs: number; modelCalls: number; tokens: number; medianComputeMs: number; p95ComputeMs?: number }>;
   controls: { id: string; name?: string; ok: boolean; scope?: string; fallbacks?: number; modelCalls?: number; planner?: { kind: string; provider: string; model: string } }[];
 }
 

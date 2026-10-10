@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-from .harness import SUPPORTED_FAULTS, ModelDemoNetwork
+from .harness import SUPPORTED_FAULTS, ModelDemoNetwork, ScenarioVariant
 from .orchestrator import IncidentSession, decide, run_incident
 from .planner.runbook import RunbookPlanner
 from .topology import build_topology
@@ -20,12 +20,13 @@ def pick_fault(fault: str, seed: int) -> str:
     return SUPPORTED_FAULTS[seed % len(SUPPORTED_FAULTS)] if fault == "random" else fault
 
 
-def model_session(pack: str, fault: str, seed: int, planner: Any = None, pace: float = 0, incident_id: str | None = None) -> tuple[IncidentSession, dict[str, Any]]:
+def model_session(pack: str, fault: str, seed: int, planner: Any = None, pace: float = 0, incident_id: str | None = None,
+                  variant: ScenarioVariant = "standard") -> tuple[IncidentSession, dict[str, Any]]:
     topo = build_topology(pack)
     session = IncidentSession(
         incident_id=incident_id or new_incident_id(),
         sealed_fault=pick_fault(fault, seed),
-        demo=ModelDemoNetwork(topo, seed),
+        demo=ModelDemoNetwork(topo, seed, variant),
         twin=ModelTwin(),
         planner=planner or RunbookPlanner(),
         pace=pace,
@@ -33,8 +34,8 @@ def model_session(pack: str, fault: str, seed: int, planner: Any = None, pace: f
     return session, topo
 
 
-async def run_model(pack: str, fault: str, seed: int, planner: Any = None) -> IncidentSession:
-    session, topo = model_session(pack, fault, seed, planner)
+async def run_model(pack: str, fault: str, seed: int, planner: Any = None, variant: ScenarioVariant = "standard") -> IncidentSession:
+    session, topo = model_session(pack, fault, seed, planner, variant=variant)
     await run_incident(session, topo, seed)
     return session
 

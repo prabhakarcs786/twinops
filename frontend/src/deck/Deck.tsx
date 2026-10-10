@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, Printer } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Brand } from '../components/Brand.tsx';
+import { fetchReports, type EvaluationReport } from '../api/live.ts';
 import { Link } from '../lib/router.tsx';
 import '../styles/deck.css';
 
@@ -28,6 +29,36 @@ const CONTROLS = [
   'Unsupported physical fault → INCONCLUSIVE, zero experiments',
   'Instruction-like text in device logs → treated as data',
 ];
+
+function MeasuredEvidence() {
+  const [reports, setReports] = useState<EvaluationReport[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetchReports().then((items) => { if (active) setReports(items.sort((first, second) => second.generatedAt.localeCompare(first.generatedAt))); })
+      .catch(() => undefined).finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, []);
+  const latest = reports.find((report) => report.planner.kind === 'llm');
+  const baseline = latest && reports.find((report) => report.planner.kind === 'runbook' && report.pack === latest.pack
+    && report.suiteVersion === latest.suiteVersion && report.seeds === latest.seeds && report.startSeed === latest.startSeed
+    && (report.variant ?? 'standard') === (latest.variant ?? 'standard'));
+  const paired = latest && baseline;
+  return <div className="d-measured" data-evidence-ready={loaded}>
+    {paired ? <>
+      <p className="d-eyebrow">{latest.planner.provider} · {latest.planner.model} vs runbook</p>
+      <table className="d-table"><caption>{latest.pack} · {latest.variant ?? 'standard'} · seeds {latest.startSeed}–{latest.startSeed + latest.seeds - 1}</caption>
+        <thead><tr><th scope="col">Fault</th><th scope="col">Runbook</th><th scope="col">Model, no fallback</th><th scope="col">Unsafe pass</th></tr></thead>
+        <tbody>{Object.entries(latest.byFault).map(([fault, row]) => <tr key={fault}><th scope="row">{fault.replaceAll('_', ' ')}</th><td>{baseline.byFault[fault]?.verdictOk ?? '-'}/{baseline.byFault[fault]?.runs ?? '-'}</td><td>{row.fallbackFreeSuccess ?? '-'}/{row.runs}</td><td>{row.unsafePassed}</td></tr>)}</tbody>
+      </table>
+      <p className="d-foot">{latest.planner.version} · {latest.suiteVersion} · measured {new Date(latest.generatedAt).toLocaleDateString()}. {latest.seeds < 10 ? 'Smoke sample only, not a reliability estimate.' : 'Synthetic scenarios, not production reliability.'} Memory disabled in paired evaluations.</p>
+    </> : <>
+      <p className="d-eyebrow">Paired evidence not loaded</p>
+      <p className="d-foot">No model advantage is claimed without comparable reports. Saved comparisons are available in the connected workbench.</p>
+    </>}
+    <ul className="d-list d-small">{CONTROLS.slice(0, 4).map((control) => <li key={control}>{control}</li>)}</ul>
+  </div>;
+}
 
 const SLIDES: Slide[] = [
   {
@@ -57,7 +88,7 @@ const SLIDES: Slide[] = [
               <strong>Change review is re-investigation.</strong> Approvers redo the diagnosis because there is no shared evidence.
             </li>
             <li>
-              <strong>AI makes it faster, not safer.</strong> A fluent explanation is not evidence, and a model can be steered by text in logs.
+              <strong>AI suggestions are not proof.</strong> A fluent explanation is not evidence, and a model can be steered by text in logs.
             </li>
           </ul>
         </div>
@@ -86,7 +117,7 @@ const SLIDES: Slide[] = [
         <div className="d-cols d-cols-3">
           <div className="d-card">
             <p className="d-eyebrow">Allowed to be wrong safely</p>
-            <p>Every candidate is applied to a twin of the affected slice and measured with real probes. Failed fixes cost nothing.</p>
+            <p>Candidates are tested on an isolated twin. Probes are simulated in the model twin and real network traffic in Containerlab. Failures remain outside the target network.</p>
           </div>
           <div className="d-card">
             <p className="d-eyebrow">Attacks its own answer</p>
@@ -115,7 +146,7 @@ const SLIDES: Slide[] = [
         <div className="d-stats">
           <div>
             <span className="d-num">58.5 s</span>
-            <span>server compute to verdict (FRR, CoreDNS, nginx in Containerlab)</span>
+            <span>historical runbook smoke, 9 Oct 2026 · FRR, CoreDNS, nginx in Containerlab</span>
           </div>
           <div>
             <span className="d-num">0</span>
@@ -139,28 +170,28 @@ const SLIDES: Slide[] = [
         <div className="d-arch-row">
           <div className="d-box">Web workbench · React<small>SSE event stream, evidence tabs, approval dialog</small></div>
           <div className="d-arrow" aria-hidden="true">⇄</div>
-          <div className="d-box d-box-strong">FastAPI on Cloud Run<small>incidents · SSE · decisions · Proof Pack export · CSP, rate limit, operator auth</small></div>
+          <div className="d-box d-box-strong">FastAPI + SSE<small>Cloud Run packaging; deployment unverified · incident evidence in local SQLite</small></div>
         </div>
         <div className="d-arch-grid">
-          <div className="d-box d-ai">Planner<small>Gemini (structured output) with deterministic runbook fallback</small></div>
+          <div className="d-box d-ai">Planner<small>Ollama tested locally · Gemini/Vertex adapters · bounded feedback and runbook fallback</small></div>
           <div className="d-box d-twin">Twin backend<small>model twin (Cloud Run) · Containerlab lab: FRR BGP, CoreDNS, nginx TLS</small></div>
           <div className="d-box d-ok">Proof Gate G1–G8<small>deterministic code: reproduction, restore, regression, challenges, policy, rollback, latency, human</small></div>
-          <div className="d-box d-prod">Apply gateway<small>single write path · approval token bound to change + state hash · post-checks · auto-rollback</small></div>
+          <div className="d-box d-prod">Apply gateway<small>approval bound to change + state · post-checks · verified rollback or operator recovery</small></div>
         </div>
         <p className="d-foot">Same event and evidence model in the browser engine, the Python engine and the lab, checked by 40 parity cases.</p>
       </div>
     ),
   },
   {
-    title: 'Where Gemini is used, and why code does the rest',
+    title: 'AI proposes. Evidence decides.',
     body: (
       <div className="d-cols">
         <div className="d-card d-card-ai">
-          <p className="d-eyebrow">Gemini does the reasoning</p>
+          <p className="d-eyebrow">Bounded model reasoning</p>
           <ul className="d-list">
             <li>Ranked hypotheses that cite evidence IDs (JSON schema)</li>
             <li>Fix proposals from a typed action catalogue</li>
-            <li>Extra challenge ideas against its own best fix</li>
+            <li>Failed tests guide a bounded repair and fresh retest</li>
             <li>Approver briefing, labelled non-authoritative</li>
           </ul>
         </div>
@@ -168,9 +199,9 @@ const SLIDES: Slide[] = [
           <p className="d-eyebrow">Code does the judging</p>
           <ul className="d-list">
             <li>Twin, probes, gates and policy are deterministic</li>
-            <li>Every model output is schema-validated and evidence-checked</li>
+            <li>Catalogue actions and source IDs checked; hypotheses remain interpretations</li>
             <li>Device logs are fenced as untrusted data</li>
-            <li>Call budget, then runbook fallback; record and replay for audits</li>
+            <li>Historical fixes retested; past approval never reused</li>
           </ul>
         </div>
       </div>
@@ -182,7 +213,7 @@ const SLIDES: Slide[] = [
       <div className="d-cols">
         <div>
           <table className="d-table">
-            <caption>Emulated lab, one run per fault (laptop, Docker Desktop)</caption>
+            <caption>Historical runbook lab smoke · 9 Oct 2026 · one run per fault</caption>
             <thead>
               <tr>
                 <th scope="col">Fault</th>
@@ -204,30 +235,7 @@ const SLIDES: Slide[] = [
             </tbody>
           </table>
         </div>
-        <div>
-          <div className="d-stats d-stats-row">
-            <div>
-              <span className="d-num">40</span>
-              <span>seeded incidents (model twin)</span>
-            </div>
-            <div>
-              <span className="d-num">0</span>
-              <span>unsafe fixes passed</span>
-            </div>
-            <div>
-              <span className="d-num">6/6</span>
-              <span>adverse controls held</span>
-            </div>
-          </div>
-          <ul className="d-list d-small">
-            {CONTROLS.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
-          <p className="d-foot">
-            Diagnosis accuracy shown here is the runbook baseline. The Gemini planner runs through the same harness: <code>python -m twinops.evaluation --planner llm</code>
-          </p>
-        </div>
+        <MeasuredEvidence />
       </div>
     ),
   },
@@ -245,10 +253,10 @@ const SLIDES: Slide[] = [
         </div>
         <div className="d-card">
           <p className="d-eyebrow">Organisation</p>
-          <p>Every incident leaves a replayable evidence bundle, so knowledge stops living in one person’s head.</p>
+          <p>Past successful changes become candidates for fresh verification. A similar incident never imports an old approval.</p>
         </div>
         <p className="d-foot d-span">
-          Pilot metrics to measure (no invented baselines): time from alarm to verified fix · change failure rate · approval review time · share of AI proposals rejected by the gate.
+          A read-only review trial records time and gate agreement for the same candidate with raw evidence and with its Proof Pack. Human trials are pending; no time savings are claimed.
         </p>
       </div>
     ),
@@ -273,7 +281,7 @@ const SLIDES: Slide[] = [
         <div className="d-card">
           <p className="d-eyebrow">Honest limits today</p>
           <ul className="d-list d-small">
-            <li>Incident state is in memory, so the service runs as one instance; multi-instance needs a shared store.</li>
+            <li>Local SQLite preserves evidence. Cloud Run instance replacement needs external storage; one service process owns a target.</li>
             <li>Surge and long-lived session behaviour are listed as untested in every Proof Pack.</li>
             <li>The lab is synthetic. Production would start in read-only shadow mode.</li>
           </ul>
@@ -287,7 +295,7 @@ const SLIDES: Slide[] = [
       <div className="d-cols">
         <div>
           <ol className="d-list d-num-list">
-            <li>Incident memory: past fixes are retested on today’s twin, never reused blindly</li>
+            <li>Now built: incident-memory retesting, changed-state challenges and anonymous review trials</li>
             <li>Policy as code (OPA) and real telemetry (Prometheus, OpenTelemetry)</li>
             <li>Read-only shadow mode next to a real NOC: verdicts recorded, nothing applied</li>
           </ol>

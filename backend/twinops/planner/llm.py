@@ -17,8 +17,8 @@ from .claims import contradictory_comparisons
 from .llm_client import LLMClient, LLMError
 from .runbook import RunbookPlanner, runbook_challenges
 
-LLM_PLANNER_VERSION = "llm-planner-0.3.0"
-PROMPT_VERSION = "prompts-2026-10-09b"
+LLM_PLANNER_VERSION = "llm-planner-0.4.0"
+PROMPT_VERSION = "prompts-2026-10-10"
 MAX_QUESTIONS = 8
 
 SYSTEM = """You are the reasoning role of TwinOps, a verification layer for network operations on a SYNTHETIC lab network.
@@ -28,7 +28,8 @@ Rules you must follow:
 2. Use only the action names, targets and parameter names listed in "catalogue". Anything else is discarded.
 3. Cite evidence only by the exact IDs given in the input. Never invent IDs, numbers or facts.
 4. Prefer the narrowest change that restores the affected journeys without touching unaffected ones or weakening security controls.
-5. Your output is a proposal. Deterministic tests and a human decide; do not claim a change is safe."""
+5. Your output is a proposal. Deterministic tests and a human decide; do not claim a change is safe.
+6. Hypotheses are interpretations, not observed faults. A real evidence ID does not make a claim true; separate observations, interpretations and test outcomes."""
 
 _PARAM_PROPS = {
     "service": {"type": "string"}, "to_revision": {"type": "string"}, "seq": {"type": "integer"}, "prefixes": {"type": "array", "items": {"type": "string"}},
@@ -69,7 +70,7 @@ def _config_view(captured: dict[str, Any]) -> dict[str, Any]:
     return {
         "b17": {k: captured["b17"][k] for k in ("revision", "filterEnabled", "prefixList", "v6Prefixes")},
         "config_archive": captured["archive"],
-        "dns": {k: captured["dns"][k] for k in ("active", "primary", "standby", "serial")},
+        "dns": {k: captured["dns"][k] for k in ("active", "primary", "standby", "cache", "serial")},
         "gateway": captured["gw"],
         "clients": captured["clients"],
     }
@@ -117,7 +118,7 @@ class LLMPlanner:
             "summary": summary,
             "raw": {"call": "error" not in meta or "latencyMs" in meta, "role": role, "provider": self.provider, "model": self.model,
                     "latencyMs": meta.get("latencyMs"), "tokens": meta.get("tokens", 0), "rejected": rejected or [], "fallback": fallback,
-                    "error": meta.get("error"), "replay": meta.get("replay", False), "promptVersion": PROMPT_VERSION},
+                    "error": meta.get("error"), "replay": meta.get("replay", False), "promptVersion": PROMPT_VERSION, "candidateId": meta.get("candidateId")},
         })
 
     def _who(self) -> str:
@@ -231,7 +232,7 @@ class LLMPlanner:
                                                    "steps": {"type": "array", "maxItems": 3, "items": _step_schema(allowed, targets)}},
                   "required": ["revise", "label", "rationale", "steps"]}
         payload = {
-            "task": "A challenge exposed a weakness. Propose one revised candidate that keeps the fix but removes the weakness, or set revise=false. "
+            "task": "A baseline check or challenge exposed a weakness. Propose one revised candidate that addresses the failing probes, or set revise=false. "
                     "If the challenge shows the fix is incomplete, add the missing step to the same candidate (up to 3 steps) rather than declining.",
             "candidate": {"label": change["label"], "steps": change["steps"], "rationale": change["rationale"]},
             "failed_challenges": [{"label": f["label"], "detail": f["detail"],
@@ -253,11 +254,11 @@ class LLMPlanner:
         if errors:
             self._note("revise", "Revision rejected by schema", errors[0], meta, rejected=errors, fallback=True)
             return await self._fallback.revise(change, failed, captured, obs, topo, supported)
-        self._note("revise", f"{self.model} revised {letter}", f"{' + '.join(describe_step(s) for s in steps)}", meta)
+        self._note("revise", f"{self.model} revised {letter}", f"{' + '.join(describe_step(s) for s in steps)}", {**meta, "candidateId": f"{change['id']}2"})
         return change_set(f"{change['id']}2", f"{letter}′ · {str(data.get('label', 'revision'))[:70]}", steps, "revision", str(data.get("rationale", ""))[:400], change["id"])
 
     async def narrate(self, summary: dict[str, Any]) -> dict[str, Any] | None:
-        known = {h["id"] for h in summary["hypotheses"]} | {c["id"] for c in summary["candidates"]}
+        known = {h["id"] for h in summary["hypotheses"]} | {c["id"] for c in summary["candidates"]} | {p["id"] for p in summary.get("observations", [])}
         schema = {"type": "object", "properties": {"summary": {"type": "string"}, "evidence_ids": {"type": "array", "items": {"type": "string"}}},
                   "required": ["summary", "evidence_ids"]}
         payload = {"task": "Write a 3-5 sentence briefing for the human approver: what failed, what was tried, what was rejected and why, and what remains untested. "

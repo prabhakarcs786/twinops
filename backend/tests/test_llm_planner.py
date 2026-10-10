@@ -138,6 +138,29 @@ def test_every_model_call_is_announced_before_its_result():
     assert {"diagnose", "propose", "narrate"} <= {c["raw"]["role"] for c in calls}
 
 
+def test_failed_restoration_is_fed_back_for_a_freshly_tested_revision():
+    def repair(payload):
+        failure = payload["failed_challenges"][0]
+        assert failure["label"] == "Restoration and regression checks"
+        assert failure["failing_probes"]
+        candidate = _propose({**payload, "hypothesis": {"type": "dns_record_incorrect"}})["candidates"][0]
+        return {"revise": True, **candidate}
+
+    client = ScriptedClient({**SCRIPT, "propose": lambda payload: {"candidates": [{
+        "label": "Clear cache only", "rationale": "Incomplete first attempt",
+        "steps": [{"action": "flush_cache", "target": "DNS-1", "params": {"names": ["svc.demo"]}}],
+    }]}, "revise": repair})
+    session = _run("dns_failure", client)
+    assert session.run["verdict"] == "PASS_UNDER_DEFINED_TESTS"
+    assert session.run["selected"]["change"]["origin"] == "revision"
+    assert session.run["candidates"][0]["decision"] == "superseded"
+    assert sum(role == "revise" for role, _ in client.calls) == 1
+    revision_note = next(event for event in session.events if event["kind"] == "planner_note" and event["raw"].get("candidateId"))
+    assert revision_note["raw"]["candidateId"] == session.run["selected"]["change"]["id"]
+    assert session.run["writesDuringDiagnosis"] == 0
+    assert asyncio.run(session.demo.state_hash()) == session.run["snapshotHash"]
+
+
 def test_operator_questions_are_answered_from_run_evidence_only():
     answer = {"answer": "A was rejected because G2 failed [cand-A] [G2].", "answerable": True, "evidence_ids": ["cand-A", "G2", "MADE-UP"]}
     client = ScriptedClient({**SCRIPT, "ask": lambda p: answer})

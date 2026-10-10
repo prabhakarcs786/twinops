@@ -1,8 +1,41 @@
 import { useState } from 'react';
 import { StatusChip } from '../components/StatusChip.tsx';
-import type { CandidateRecord, Frame, RunEvent } from '../engine/types.ts';
+import type { CandidateRecord, Frame, Observation, RunEvent } from '../engine/types.ts';
 import type { RunView } from './runView.ts';
 import { fmtClock } from './usePlayback.ts';
+
+const FACT_GROUPS = ['Observed', 'Hypotheses', 'Test results', 'Limits'] as const;
+
+export function EvidenceFacts({ view, frame, observation, ready, sources, backend }: { view: RunView | null; frame: Frame; observation?: Observation; ready: boolean; sources: Map<string, string>; backend?: string }) {
+  const [group, setGroup] = useState<typeof FACT_GROUPS[number]>('Observed');
+  const selected = ready ? view?.run.selected : null;
+  const limits = [...(observation?.evidenceGaps ?? []), ...(ready ? view?.run.untested ?? [] : [])];
+  const rows = group === 'Observed'
+    ? (observation?.probes ?? []).map((probe) => ({ id: probe.id, title: probe.label, detail: probe.detail, references: [probe.id], label: probe.ok ? 'Probe passed' : 'Probe failed' }))
+    : group === 'Hypotheses'
+      ? frame.hypotheses.map((hypothesis) => ({ id: hypothesis.id, title: hypothesis.title, detail: hypothesis.rationale,
+        references: [...new Set([...hypothesis.supporting, ...hypothesis.contradicting])], label: 'Interpretation, not confirmed' }))
+      : group === 'Test results'
+        ? (selected?.gates ?? []).filter((gate) => gate.id !== 'G8').map((gate) => ({ id: gate.id, title: `${selected!.change.label} / ${gate.id}`,
+          detail: gate.reason, references: [selected!.change.id, gate.id], label: `Gate ${gate.status}` }))
+        : limits.map((limit, index) => ({ id: `LIMIT-${index + 1}`, title: `Scope limit ${index + 1}`, detail: limit, references: [], label: 'Not established' }));
+  return <div className="facts-panel">
+    <div className="facts-heading"><h3>What the evidence establishes</h3><StatusChip tone="info">{backend === 'emulated' ? 'Emulated lab' : 'Model twin'}</StatusChip></div>
+    <div className="segmented facts-filter" role="group" aria-label="Evidence category">
+      {FACT_GROUPS.map((category) => <button key={category} type="button" aria-pressed={group === category} className={group === category ? 'is-on' : ''} onClick={() => setGroup(category)}>{category}</button>)}
+    </div>
+    {group === 'Test results' && <p className="muted">{selected ? 'Code-evaluated gates for the selected candidate. Human approval is a separate decision.' : 'No selected candidate has verified test outcomes.'}</p>}
+    {!rows.length && <p className="muted">{group === 'Observed' ? 'Awaiting the observed snapshot.' : group === 'Hypotheses' ? 'No ranked hypotheses yet.' : 'No additional evidence in this category.'}</p>}
+    <ul className="facts-list">{rows.map((row) => <li key={row.id}>
+      <div className="fact-heading"><code>{row.id}</code><span>{row.label}</span></div>
+      <div><h4>{row.title}</h4><p>{row.detail}</p>
+        {!!row.references.length && <details><summary>Sources: {row.references.join(', ')}</summary>
+          <ul>{row.references.map((reference) => <li key={reference}><strong>{reference}</strong>: {sources.get(reference) ?? (reference === row.id ? row.detail : reference === selected?.change.id ? selected.change.label : 'See the candidate gate record.')}</li>)}</ul>
+        </details>}
+      </div>
+    </li>)}</ul>
+  </div>;
+}
 
 export function ImpactSummary({ frame, view, ready }: { frame: Frame; view: RunView | null; ready: boolean }) {
   const journeys = Object.values(frame.prod.probes);

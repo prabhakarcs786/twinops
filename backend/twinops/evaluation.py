@@ -12,12 +12,13 @@ import statistics
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from math import ceil
 from pathlib import Path
 from typing import Any
 
 from .config import load_env_file
 from .engine import model_session
-from .harness import ALL_FAULTS
+from .harness import ALL_FAULTS, VARIANTS, ScenarioVariant
 from .orchestrator import apply_with_approval, create_approval, decide, run_incident
 from .topology import build_topology
 from .twin import create_context, run_experiment
@@ -35,9 +36,11 @@ def score(fault: str, run: dict[str, Any], events: list[dict[str, Any]]) -> dict
     notes = [e for e in events if e["kind"] == "planner_note"]
     fallbacks = sum(1 for n in notes if (n.get("raw") or {}).get("fallback"))
     selected = run.get("selected")
+    model_revisions = {note["raw"].get("candidateId") for note in notes if note["raw"].get("role") == "revise" and not note["raw"].get("fallback")}
     return {
         "fallbackFreeSuccess": run["verdict"] in verdicts and fallbacks == 0,
         "selectedOrigin": selected["change"]["origin"] if selected else None,
+        "modelSelected": bool(selected and (selected["change"]["origin"] == "llm" or selected["change"]["id"] in model_revisions)),
         "abstained": selected is None,
         "fault": fault,
         "seed": run["seed"],
@@ -57,8 +60,8 @@ def score(fault: str, run: dict[str, Any], events: list[dict[str, Any]]) -> dict
     }
 
 
-async def evaluate_one(fault: str, seed: int, planner: Any = None, pack: str = "core") -> dict[str, Any]:
-    session, topo = model_session(pack, fault, seed, planner)
+async def evaluate_one(fault: str, seed: int, planner: Any = None, pack: str = "core", variant: ScenarioVariant = "standard") -> dict[str, Any]:
+    session, topo = model_session(pack, fault, seed, planner, variant=variant)
     await run_incident(session, topo, seed)
     return score(fault, session.run, session.events)
 
@@ -133,11 +136,12 @@ def summarise(scores: list[dict[str, Any]]) -> dict[str, Any]:
             "verdictOk": sum(s["verdictOk"] for s in xs),
             "fallbackFreeSuccess": sum(s["fallbackFreeSuccess"] for s in xs),
             "abstentions": sum(s["abstained"] for s in xs),
-            "llmSelected": sum(s["selectedOrigin"] == "llm" for s in xs),
+            "llmSelected": sum(s.get("modelSelected", s["selectedOrigin"] == "llm") for s in xs),
             "avgExperiments": round(sum(s["experiments"] for s in xs) / len(xs), 2),
             "unsafeRejected": sum(s["unsafeRejected"] for s in xs),
             "unsafePassed": sum(s["unsafePassed"] for s in xs),
             "medianComputeMs": statistics.median(s["computeMs"] for s in xs),
+            "p95ComputeMs": sorted(s["computeMs"] for s in xs)[ceil(len(xs) * 0.95) - 1],
             "fallbacks": sum(s["fallbacks"] for s in xs),
             "rejectedOutputs": sum(s["rejectedOutputs"] for s in xs),
             "modelCalls": sum(s["modelCalls"] for s in xs),
@@ -146,7 +150,7 @@ def summarise(scores: list[dict[str, Any]]) -> dict[str, Any]:
     return by_fault
 
 
-async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed: int = 1) -> dict[str, Any]:
+async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed: int = 1, variant: ScenarioVariant = "standard") -> dict[str, Any]:
     from .planner.factory import build_planner
 
     started = time.monotonic()
@@ -154,7 +158,7 @@ async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed
     for fault in ALL_FAULTS:
         for seed in range(start_seed, start_seed + seeds):
             planner = build_planner(planner_kind)
-            scores.append(await evaluate_one(fault, seed, planner, pack))
+            scores.append(await evaluate_one(fault, seed, planner, pack, variant))
     planner = build_planner(planner_kind)
     return {
         "generatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -162,13 +166,14 @@ async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed
         "twin": "model",
         "seeds": seeds,
         "startSeed": start_seed,
-        "suiteVersion": "evaluation-0.2.0",
+        "suiteVersion": "evaluation-0.3.0",
+        "variant": variant,
         "pack": pack,
         "byFault": summarise(scores),
         "controls": await run_controls(pack, lambda: build_planner(planner_kind)),
         "runs": scores,
         "durationS": round(time.monotonic() - started, 1),
-        "note": "Synthetic seeds of one topology; the answer key is sealed from the planner. Not a production reliability estimate.",
+        "note": f"Synthetic {VARIANTS[variant].lower()} scenario on one topology; memory disabled for comparison. Freeze prompts before evaluating a reserved seed range. Not a production reliability estimate.",
     }
 
 
@@ -180,13 +185,14 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--start-seed", type=int, default=1)
     parser.add_argument("--compare", action="store_true", help="Write runbook and selected-planner reports using identical seeds")
+    parser.add_argument("--variant", choices=list(VARIANTS), default="standard")
     args = parser.parse_args()
     load_env_file()
     if args.seeds < 1 or args.start_seed < 0:
         parser.error("seeds must be positive and start-seed must be non-negative")
     kinds = list(dict.fromkeys(["runbook", args.planner])) if args.compare else [args.planner]
     for kind in kinds:
-        report = asyncio.run(evaluate(kind, args.seeds, args.pack, args.start_seed))
+        report = asyncio.run(evaluate(kind, args.seeds, args.pack, args.start_seed, args.variant))
         if args.out:
             path = args.out.with_name(f"{args.out.stem}-{kind}.json") if args.compare else args.out
             path.parent.mkdir(parents=True, exist_ok=True)

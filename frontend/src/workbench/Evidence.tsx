@@ -4,9 +4,11 @@ import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { describeStep } from '../engine/catalogue.ts';
 import { VERDICT_LABEL } from '../engine/orchestrator.ts';
 import { shortHash } from '../engine/sha256.ts';
-import type { Frame, GateCheck, GateStatus, RunEvent } from '../engine/types.ts';
+import type { Frame, GateCheck, GateStatus, Observation, RunEvent } from '../engine/types.ts';
 import { AiTrace } from './AiTrace.tsx';
 import { AskPanel } from './AskPanel.tsx';
+import { MemoryPanel } from './MemoryPanel.tsx';
+import { EvidenceFacts } from './DecisionEvidence.tsx';
 import type { RunView } from './runView.ts';
 
 const GATE_NAMES: Record<string, string> = {
@@ -22,11 +24,13 @@ const GATE_NAMES: Record<string, string> = {
 
 const GATE_TONE: Record<GateStatus, ChipTone> = { pass: 'ok', fail: 'fail', warn: 'warn', skip: 'skip', pending: 'pending' };
 
-export type EvidenceTab = 'hypotheses' | 'gate' | 'diff' | 'ai' | 'ask' | 'pack';
+export type EvidenceTab = 'facts' | 'hypotheses' | 'gate' | 'diff' | 'memory' | 'ai' | 'ask' | 'pack';
 const ALL_TABS: { id: EvidenceTab; label: string }[] = [
+  { id: 'facts', label: 'Facts & scope' },
   { id: 'hypotheses', label: 'Hypotheses' },
   { id: 'gate', label: 'Proof Gate' },
   { id: 'diff', label: 'Diff & rollback' },
+  { id: 'memory', label: 'Memory' },
   { id: 'ai', label: 'AI trace' },
   { id: 'ask', label: 'Ask TwinOps' },
   { id: 'pack', label: 'Proof Pack' },
@@ -60,7 +64,9 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
   const decided = frame.candidates.filter((c) => ['pass', 'warn', 'rejected', 'superseded'].includes(c.status));
   const activeId = inspectId && decided.some((c) => c.id === inspectId) ? inspectId : (frame.selectedId ?? decided.at(-1)?.id ?? null);
   const record = view?.run.candidates.find((c) => c.change.id === activeId);
-  const observation = view?.run.observation;
+  const observation = events.find((event) => event.kind === 'observed')?.raw as Observation | undefined
+    ?? (verdictVisible ? view?.run.observation : undefined);
+  const twinBackend = view?.run.versions.twin ?? (events.find((event) => event.kind === 'fault_injected')?.raw as { network?: string } | undefined)?.network;
   const sources = new Map<string, string>([
     ...(observation?.probes ?? []).map((p): [string, string] => [p.id, `${p.label}: ${p.detail}`]),
     ...(observation?.alarms ?? []).map((a): [string, string] => [a.id, a.text]),
@@ -77,8 +83,9 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
   });
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const i = TABS.findIndex((t) => t.id === tab);
-    const next = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i - 1 + TABS.length) % TABS.length : -1;
+    const focused = (e.target as HTMLElement).closest('[role="tab"]')?.id.replace('tab-', '') ?? tab;
+    const i = TABS.findIndex((t) => t.id === focused);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i - 1 + TABS.length) % TABS.length : -1;
     if (next < 0) return;
     e.preventDefault();
     setTab(TABS[next].id);
@@ -118,6 +125,7 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
       </div>
 
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tabpanel" tabIndex={0}>
+        {tab === 'facts' && <EvidenceFacts view={view} frame={frame} observation={observation} ready={verdictVisible} sources={sources} backend={twinBackend} />}
         {tab === 'hypotheses' &&
           (frame.hypotheses.length ? (
             <ol className="hyps">
@@ -224,7 +232,9 @@ export function Evidence({ view, frame, events, ask, tab: requested, onTab, insp
             <p className="muted">Every candidate is a typed change from the catalogue — never a free-text command — so its exact diff can be reviewed.</p>
           ))}
 
-        {tab === 'ai' && <AiTrace events={events} frame={frame} />}
+        {tab === 'memory' && <MemoryPanel run={view?.run ?? null} events={events} frame={frame} onInspect={(id) => { onInspect(id); setTab('gate'); }} />}
+
+        {tab === 'ai' && <AiTrace events={events} frame={frame} plannerKind={view?.run.planner?.kind ?? (ask ? 'llm' : 'runbook')} />}
 
         {tab === 'ask' && ask && <AskPanel key={ask.incidentId} incidentId={ask.incidentId} model={ask.model} ready={ask.ready} />}
 

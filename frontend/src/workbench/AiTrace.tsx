@@ -4,6 +4,8 @@ import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import type { Frame, RunEvent } from '../engine/types.ts';
 
 interface CallRaw {
+  call?: boolean;
+  candidateId?: string;
   role?: string;
   latencyMs?: number | null;
   tokens?: number;
@@ -51,12 +53,13 @@ function callStatus(raw: CallRaw): { tone: ChipTone; text: string } {
   return { tone: 'ok', text: 'accepted' };
 }
 
-export function AiTrace({ events, frame }: { events: RunEvent[]; frame: Frame }) {
+export function AiTrace({ events, frame, plannerKind = 'runbook' }: { events: RunEvent[]; frame: Frame; plannerKind?: string }) {
   const calls = events.filter((e) => e.kind === 'planner_note').map((e) => ({ e, raw: (e.raw ?? {}) as CallRaw }));
   const last = events.at(-1);
   const pending = last?.kind === 'model_call' ? last : undefined;
 
   if (!calls.length && !pending) {
+    if (plannerKind === 'llm') return <p className="muted">Awaiting model-call evidence.</p>;
     return (
       <p className="muted">
         This run used the deterministic runbook planner, so no model calls were made. Configure Gemini, Ollama or an OpenAI-compatible endpoint in <code>.env</code> and run on the live backend to
@@ -69,10 +72,10 @@ export function AiTrace({ events, frame }: { events: RunEvent[]; frame: Frame })
   const tokens = calls.reduce((s, c) => s + (c.raw.tokens ?? 0), 0);
   const discarded = calls.reduce((s, c) => s + (c.raw.rejected?.length ?? 0), 0);
   const fallbacks = calls.filter((c) => c.raw.fallback).length;
-  const revisions = calls.filter((c) => c.raw.role === 'revise' && !c.raw.fallback && / revised /.test(c.e.title)).length;
-  // With an LLM planner, revisions are model-authored unless the revise call fell back to the runbook.
-  const modelFixes = frame.candidates.filter((c) => c.origin === 'llm' || (c.origin === 'revision' && revisions > 0));
-  const proposed = modelFixes.length - revisions;
+  const revisionIds = new Set(calls.filter((call) => call.raw.role === 'revise' && !call.raw.fallback && call.raw.candidateId).map((call) => call.raw.candidateId));
+  const modelFixes = frame.candidates.filter((candidate) => candidate.origin === 'llm' || revisionIds.has(candidate.id));
+  const revisions = modelFixes.filter((candidate) => revisionIds.has(candidate.id)).length;
+  const proposed = modelFixes.filter((candidate) => candidate.origin === 'llm').length;
   const passed = modelFixes.filter((c) => c.status === 'pass' || c.status === 'warn').length;
   const stopped = modelFixes.filter((c) => c.status === 'rejected' || c.status === 'superseded').length;
   const testing = modelFixes.length - passed - stopped;
@@ -95,7 +98,7 @@ export function AiTrace({ events, frame }: { events: RunEvent[]; frame: Frame })
             <Cpu size={14} aria-hidden="true" /> Model calls
           </dt>
           <dd>
-            {calls.length}
+            {calls.filter((call) => call.raw.call !== false).length}
             {pending ? ' + 1 running' : ''} <small>{seconds(totalMs)} total</small>
           </dd>
         </div>
