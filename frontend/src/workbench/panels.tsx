@@ -4,6 +4,7 @@ import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { TopologyCanvas } from '../components/TopologyCanvas.tsx';
 import type { Actor, CandidateSummary, Frame, Phase, RunEvent, Topology } from '../engine/types.ts';
 import { fmtClock } from './usePlayback.ts';
+import { DEMO_TARGET, type TargetCopy } from './runView.ts';
 
 const PHASES: { id: Phase; label: string }[] = [
   { id: 'observe', label: 'Observe' },
@@ -32,14 +33,14 @@ export function PhaseStepper({ seen, current }: { seen: Set<Phase>; current: Pha
   );
 }
 
-export function Counters({ frame, wall, verdictAt }: { frame: Frame; wall: number; verdictAt: number | null }) {
+export function Counters({ frame, wall, verdictAt, target = DEMO_TARGET }: { frame: Frame; wall: number; verdictAt: number | null; target?: TargetCopy }) {
   const c = frame.counters;
   const items: { label: string; value: ReactNode; hint: string; tone?: string }[] = [
     { label: verdictAt !== null ? 'Time to verdict' : 'Elapsed', value: fmtClock(verdictAt ?? wall), hint: 'real time since the break' },
     { label: 'Experiments in twin', value: c.experiments, hint: `${c.revisions} revised after a challenge` },
     { label: 'Challenges run', value: c.challengesRun, hint: `${c.probesRun} probes executed` },
     { label: 'Unsafe fixes rejected', value: c.unsafeRejected, hint: 'failed regression, challenge or policy', tone: c.unsafeRejected ? 'fail' : undefined },
-    { label: 'Production writes during diagnosis', value: c.productionWritesDuringDiagnosis, hint: 'computed from the demo network write log', tone: 'ok' },
+    { label: 'Production writes during diagnosis', value: c.productionWritesDuringDiagnosis, hint: `computed from the ${target.prose.replace(/^the /, '')} write log`, tone: 'ok' },
   ];
   return (
     <dl className="counters">
@@ -81,7 +82,7 @@ const TWIN_STATE: Record<NonNullable<Frame['twin']>['state'], { tone: ChipTone; 
   idle: { tone: 'info', text: 'Evidence recorded' },
 };
 
-export function Stage({ topo, frame, animate }: { topo: Topology; frame: Frame; animate: boolean }) {
+export function Stage({ topo, frame, animate, target = DEMO_TARGET }: { topo: Topology; frame: Frame; animate: boolean; target?: TargetCopy }) {
   const prodTone: ChipTone = frame.prod.status === 'healthy' ? 'ok' : frame.prod.status === 'restored' ? 'ok' : 'fail';
   const prodText = frame.prod.status === 'healthy' ? 'Healthy' : frame.prod.status === 'restored' ? 'Restored · verified' : 'Incident';
   return (
@@ -89,13 +90,13 @@ export function Stage({ topo, frame, animate }: { topo: Topology; frame: Frame; 
       <section className={`stage-panel stage-prod is-${frame.prod.status}`} aria-labelledby="prod-title">
         <header>
           <div>
-            <p className="stage-kicker">Production stand-in</p>
-            <h2 id="prod-title">Demo network</h2>
+            <p className="stage-kicker">{target.kicker}</p>
+            <h2 id="prod-title">{target.name}</h2>
           </div>
           <StatusChip tone={prodTone}>{prodText}</StatusChip>
         </header>
-        <p className="stage-note">Synthetic · read-only to TwinOps · writes only via approved apply gateway</p>
-        <TopologyCanvas topo={topo} variant="prod" probes={frame.prod.probes} alarmNodes={frame.prod.alarmNodes} animate={animate} label={`Demo network: ${prodText}`} />
+        <p className="stage-note">{target.note}</p>
+        <TopologyCanvas topo={topo} variant="prod" probes={frame.prod.probes} alarmNodes={frame.prod.alarmNodes} animate={animate} label={`${target.name}: ${prodText}`} />
         <JourneyList probes={frame.prod.probes} />
       </section>
 
@@ -125,7 +126,7 @@ export function Stage({ topo, frame, animate }: { topo: Topology; frame: Frame; 
         ) : (
           <div className="twin-empty">
             <CircleDashed size={42} strokeWidth={1.2} aria-hidden="true" />
-            <p>No twin yet. TwinOps never experiments on the demo network itself.</p>
+            <p>No twin yet. TwinOps never experiments on {target.prose} itself.</p>
           </div>
         )}
       </section>

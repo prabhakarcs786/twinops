@@ -1,11 +1,31 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, Radio, Server, ShieldCheck } from 'lucide-react';
 import { SiteHeader } from '../components/SiteHeader.tsx';
+import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { Link } from '../lib/router.tsx';
 import '../styles/connections.css';
 
-interface Issue { id: string; title: string; status: string; incidentId: string | null; detectedAt: number; investigationStatus?: string }
-interface Connection { configured: boolean; connected: boolean; ready?: boolean; name?: string; detail?: string; url?: string; checkedAt?: number; recoveryRequired?: boolean; issues: Issue[] }
+interface Issue { id: string; title: string; status: string; incidentId: string | null; detectedAt: number; resolvedAt?: number; failedJourneys?: string[]; investigationStatus?: string }
+interface Journey { id: string; label: string; ok: boolean }
+interface Connection { configured: boolean; connected: boolean; ready?: boolean; name?: string; detail?: string; url?: string; checkedAt?: number; recoveryRequired?: boolean; operation?: string | null; journeys?: Journey[]; issues: Issue[] }
+
+const duration = (seconds: number) => {
+  const s = Math.max(0, Math.round(seconds));
+  return s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+};
+
+/** Same lifecycle wording as Metro Network's incident desk, so both apps describe one incident identically. */
+function issueState(issue: Issue, current: boolean, operation?: string | null): { tone: ChipTone; label: string; detail: string } {
+  if (issue.status === 'resolved') return { tone: 'ok', label: 'Recovery verified', detail: issue.resolvedAt ? `Recovered in ${duration(issue.resolvedAt - issue.detectedAt)}` : 'Fresh probes confirm recovery' };
+  if (issue.status === 'reset') return { tone: 'skip', label: 'Reset by operator', detail: 'Closed without a verified recovery' };
+  if (issue.investigationStatus === 'recovery_required') return { tone: 'fail', label: 'Operator recovery required', detail: 'A change was interrupted or rollback could not be verified' };
+  if (current && operation === 'applying') return { tone: 'warn', label: 'Applying approved change', detail: 'Metro Network is applying the change you approved' };
+  if (current && operation === 'applied') return { tone: 'warn', label: 'Verifying recovery', detail: 'Approved change applied · confirming with fresh probes' };
+  if (issue.investigationStatus === 'finished') return { tone: 'fail', label: 'Needs attention', detail: 'Investigation finished without a verified recovery' };
+  if (issue.incidentId) return { tone: 'pending', label: 'Investigating', detail: 'Reproducing in the isolated twin and testing fixes' };
+  return { tone: 'fail', label: 'Service disruption', detail: 'Waiting for TwinOps to pick up the issue' };
+}
+
 export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light'; onToggleTheme: () => void }) {
   const [connection, setConnection] = useState<Connection>();
   const [error, setError] = useState('');
@@ -26,6 +46,10 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
     return () => { stopped = true; clearTimeout(timer); controller.abort(); };
   }, []);
   const live = !error && connection?.connected && connection.ready;
+  const loading = !connection && !error;
+  const journeys = live ? connection.journeys ?? [] : [];
+  const operational = journeys.filter((j) => j.ok).length;
+  const journeyLabel = (id: string) => connection?.journeys?.find((j) => j.id === id)?.label ?? id;
   return <div className="connections-page">
     <SiteHeader variant="app" theme={theme} onToggleTheme={onToggleTheme} />
     <main id="main" className="connections-main" tabIndex={-1}>
@@ -34,22 +58,34 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
       <p className="connections-lede">Your applications own their live state. TwinOps investigates new issues, tests fixes in an isolated twin and brings you the evidence for approval.</p>
       {error && <p role="alert" className="connection-alert">{error}</p>}
       <section className="connection-card" aria-label="Metro Network connection">
-        <div className="connection-app-icon"><Server size={30} /></div>
+        <div className="connection-app-icon" aria-hidden="true"><Server size={30} /></div>
         <div className="connection-app-info"><p className="eyebrow">LOCAL NETWORK OPERATIONS</p><h2>Metro Network</h2><p>{connection?.detail || 'Connecting to the local application…'}</p>
           {connection?.checkedAt && <small>Last service measurement: {new Date(connection.checkedAt * 1000).toLocaleTimeString()}</small>}
         </div>
-        <div className="connection-card-actions"><span className={`connection-badge ${live ? 'is-live' : ''}`}><Radio size={14} /> {live ? 'Monitoring' : connection?.configured === false ? 'Not configured' : 'Unavailable'}</span>
-          {connection?.url && <a className="btn btn-ghost btn-sm" href={connection.url} target="_blank" rel="noreferrer">Open application <ArrowUpRight size={15} /></a>}
+        <div className="connection-card-actions">
+          <StatusChip tone={loading ? 'pending' : live ? 'ok' : connection?.configured === false ? 'skip' : 'warn'}>{loading ? 'Connecting…' : live ? 'Monitoring' : connection?.configured === false ? 'Not configured' : 'Unavailable'}</StatusChip>
+          {connection?.url && <a className="btn btn-ghost btn-sm" href={connection.url} target="_blank" rel="noreferrer">Open application <ArrowUpRight size={15} aria-hidden="true" /></a>}
         </div>
+        {!!journeys.length && <ul className="journey-health" aria-label="Live service journeys">
+          <li className="journey-health-summary">{operational} of {journeys.length} journeys operational</li>
+          {journeys.map((j) => <li key={j.id}><StatusChip tone={j.ok ? 'ok' : 'fail'}>{j.id}</StatusChip>{j.label}</li>)}
+        </ul>}
       </section>
       {connection?.configured === false && <p className="connection-alert">Start the connected demo with <code>npm run dev:connected</code> to run both applications and the real network lab.</p>}
       {connection?.recoveryRequired && <p role="alert" className="connection-alert">The network requires operator recovery. Further changes are blocked.</p>}
-      <div className="connections-explainer"><span><Radio size={17} /> Automatic issue detection</span><span><Server size={17} /> Isolated Containerlab twin</span><span><ShieldCheck size={17} /> Approval before live changes</span></div>
+      <div className="connections-explainer"><span><Radio size={17} aria-hidden="true" /> Automatic issue detection</span><span><Server size={17} aria-hidden="true" /> Isolated Containerlab twin</span><span><ShieldCheck size={17} aria-hidden="true" /> Approval before live changes</span></div>
       <section className="connected-issues"><div className="connected-section-heading"><h2>Detected incidents</h2><span>{connection?.issues.length ?? 0} recorded</span></div>
-        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} /><h3>{live ? 'Watching for new service issues' : 'Waiting for the network application'}</h3><p>Introduce a fault in Metro Network. TwinOps will detect it automatically and start gathering evidence here.</p></div> :
-          connection.issues.map((issue) => <article className="connected-issue" key={issue.id}><div><span className="eyebrow">{issue.status === 'resolved' ? 'RECOVERY VERIFIED' : issue.status === 'reset' ? 'SCENARIO RESET BY OPERATOR' : 'SERVICE DISRUPTION'}</span><h3>{issue.title}</h3><p>{new Date(issue.detectedAt * 1000).toLocaleString()} · {issue.investigationStatus === 'finished' ? 'Investigation finished' : issue.incidentId ? 'Investigation created' : 'Detection pending'}</p></div>
-            {issue.incidentId ? <Link className="btn btn-primary btn-sm" to={`/workbench?incident=${encodeURIComponent(issue.incidentId)}`}>Open investigation <ArrowUpRight size={15} /></Link> : <span>Waiting for investigation…</span>}
-          </article>)}
+        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : 'Waiting for the network application'}</h3><p>Introduce a fault in Metro Network. TwinOps will detect it automatically and start gathering evidence here.</p></div> :
+          connection.issues.map((issue, index) => {
+            const state = issueState(issue, index === 0, connection.operation);
+            const active = !['resolved', 'reset'].includes(issue.status);
+            const failed = (issue.failedJourneys ?? []).map(journeyLabel).join(' · ');
+            const timing = active ? `open for ${duration((connection.checkedAt ?? issue.detectedAt) - issue.detectedAt)}` : state.detail;
+            return <article className={`connected-issue tone-${state.tone} ${active ? 'is-active' : ''}`} key={issue.id}><div><StatusChip tone={state.tone}>{state.label}</StatusChip><h3>{issue.title}</h3>
+              <p>{new Date(issue.detectedAt * 1000).toLocaleString()} · {timing}{failed && ` · ${failed}`}</p>{active && <p>{state.detail}</p>}</div>
+              {issue.incidentId ? <Link className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`} to={`/workbench?incident=${encodeURIComponent(issue.incidentId)}`}>Open investigation <ArrowUpRight size={15} aria-hidden="true" /></Link> : <span className="connected-issue-waiting">Waiting for investigation…</span>}
+            </article>;
+          })}
       </section>
     </main>
   </div>;

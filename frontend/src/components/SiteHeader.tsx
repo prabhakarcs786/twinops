@@ -1,6 +1,6 @@
 import { ArrowRight, Menu, Moon, Sun, X } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from '../lib/router.tsx';
+import { Link, usePath } from '../lib/router.tsx';
 import { Brand } from './Brand.tsx';
 
 const NAV = [
@@ -19,6 +19,12 @@ interface Props {
 
 export function SiteHeader({ variant, theme, onToggleTheme }: Props) {
   const [open, setOpen] = useState(false);
+  const path = usePath();
+  const crumb = path.startsWith('/connections') ? 'Applications' : path.startsWith('/review') ? 'Review trial' : 'Workbench';
+  // The current page is shown, not linked: re-navigating would drop its query (e.g. ?incident=) without remounting.
+  const nav = (to: string, label: string) => path.startsWith(to)
+    ? <span className="btn btn-ghost btn-sm" aria-current="page">{label}</span>
+    : <Link to={to} className="btn btn-ghost btn-sm">{label}</Link>;
   return (
     <header className={`site-header is-${variant}`}>
       <a className="skip-link" href="#main">
@@ -41,10 +47,11 @@ export function SiteHeader({ variant, theme, onToggleTheme }: Props) {
             </Link>
           </nav>
         )}
-        {variant === 'app' && <span className="app-crumb">Workbench</span>}
+        {variant === 'app' && <span className="app-crumb">{crumb}</span>}
 
         <div className="site-actions">
-          <Link to="/connections" className="btn btn-ghost btn-sm">Applications</Link>
+          {nav('/connections', 'Applications')}
+          {variant === 'app' && nav('/workbench', 'Workbench')}
           <button type="button" className="icon-btn" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>

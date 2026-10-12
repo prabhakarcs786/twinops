@@ -262,6 +262,14 @@ main:focus {
   background: var(--surface-2);
   border-color: color-mix(in srgb, var(--text) 35%, transparent);
 }
+.btn-ghost[aria-current='page'] {
+  background: var(--surface-3);
+  border-color: var(--text);
+  cursor: default;
+}
+.btn-ghost[aria-current='page']:hover {
+  transform: none;
+}
 .btn-sm {
   height: 36px;
   padding: 0 0.9rem;

@@ -134,6 +134,26 @@ class NetworkState:
         if not self.issue or self.issue.get('incidentId') != incident_id or self.issue.get('investigationStatus') in ('finished', 'recovery_required'):
             raise HTTPException(409, 'This investigation does not own the current issue')
 
+    def can_replace_issue(self) -> bool:
+        issue = self.issue
+        return bool(issue) and issue['status'] == 'resolved' and (not issue.get('incidentId') or issue.get('investigationStatus') == 'finished')
+
+    async def restore_baseline(self):
+        """Archive the current issue and return the devices to the healthy baseline. Caller holds the lock."""
+        if self.issue:
+            archived = copy.deepcopy(self.issue)
+            if archived['status'] != 'resolved':
+                archived.update(status='reset', resetAt=time.time())
+            self.history.append(archived)
+        self.recovery = True
+        self.save()
+        self.network = LabDemoNetwork(self.network.inst, self.topo, 7)
+        await self.network.prepare()
+        self.issue = None
+        self.operation = None
+        self.recovery = False
+        self.save()
+
 
 def create_network_app(settings: Settings | None = None, state: NetworkState | None = None) -> FastAPI:
     settings = settings or Settings()
@@ -180,8 +200,10 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
         async with state.lock:
             if not state.ready or state.recovery:
                 raise HTTPException(409, 'Lab is unavailable or needs operator recovery')
+            if state.issue and not state.can_replace_issue():
+                raise HTTPException(409, 'Reset the current scenario before starting another fault')
             if state.issue:
-                raise HTTPException(409, 'Reset the completed scenario before starting another fault')
+                await state.restore_baseline()
             # Persist intent before a device write: an interrupted fault injection is uncertain too.
             state.recovery = True
             state.save()
@@ -198,19 +220,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
                 raise HTTPException(409, 'Operator recovery required; automatic reset is blocked')
             if state.issue and state.issue.get('incidentId') and state.issue.get('investigationStatus') != 'finished':
                 raise HTTPException(409, 'Wait for the investigation or reject its pending approval before resetting')
-            if state.issue:
-                archived = copy.deepcopy(state.issue)
-                if archived['status'] != 'resolved':
-                    archived.update(status='reset', resetAt=time.time())
-                state.history.append(archived)
-            state.recovery = True
-            state.save()
-            state.network = LabDemoNetwork(state.network.inst, state.topo, 7)
-            await state.network.prepare()
-            state.issue = None
-            state.operation = None
-            state.recovery = False
-            state.save()
+            await state.restore_baseline()
             await state.refresh()
             return state.dashboard()
 

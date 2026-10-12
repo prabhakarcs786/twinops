@@ -992,6 +992,48 @@
   font: 500 0.72rem/1.4 var(--mono) !important;
   color: var(--muted) !important;
 }
+.verdict-source {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.verdict-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.wb-controls-loading {
+  min-height: 9.5rem;
+  align-content: center;
+}
+.wb-skeleton {
+  display: block;
+  height: 58px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+@keyframes skeleton-sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-skeleton {
+    animation: none;
+  }
+}
+.wb-control-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.wb-control-links .btn {
+  flex: 1 1 auto;
+}
 .reveal {
   display: inline-flex;
   align-items: center;
@@ -1879,6 +1921,9 @@
 .impact-summary div > span:last-child { color: var(--text-2); font-size: .82rem; }
 .coverage-note { grid-column: 1 / -1; color: var(--warn); font-size: .82rem; }
 .recovery-notice { padding: .8rem 1rem; border: 1px solid var(--warn); border-radius: 12px; background: var(--bg-2); color: var(--text-2); font-size: .88rem; overflow-wrap: anywhere; }
+.follow-notice { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding: .7rem 1rem; border: 1px solid var(--ai); border-radius: 12px; background: color-mix(in srgb, var(--ai) 8%, var(--bg-2)); color: var(--text); font-size: .9rem; }
+.follow-notice p { flex: 1; margin: 0; }
+.follow-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); box-shadow: 0 0 0 4px color-mix(in srgb, var(--fail) 25%, transparent); }
 .comparison, .evidence-replay, .benchmark-panel { border: 1px solid var(--border); background: var(--surface); border-radius: 18px; overflow: hidden; min-width: 0; }
 .section-caption { padding: 1.1rem 1.2rem; }
 .section-caption h2 { font-size: 1.2rem; }

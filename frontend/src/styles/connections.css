@@ -1,1 +1,39 @@
-.connections-main{max-width:1200px;margin:auto;padding:64px 28px}.connections-main>h1{font-size:clamp(36px,5vw,58px);letter-spacing:-2px;line-height:1.12;margin:16px 0 22px}.connections-lede{max-width:720px;line-height:1.8;color:var(--text-muted,#8a9caa);font-size:15px}.connection-card{display:flex;align-items:center;gap:24px;padding:30px;margin-top:42px;border:1px solid var(--border,#29404b);border-radius:16px;background:var(--surface,#10202a)}.connection-app-icon{width:70px;height:70px;border:1px solid #34665c;border-radius:16px;display:grid;place-items:center;color:#6cd4b0;background:#143a31;flex-shrink:0}.connection-app-info{flex:1}.connection-app-info .eyebrow{font-size:10px;margin:0 0 10px}.connection-app-info h2{font-size:24px;margin:0 0 8px}.connection-app-info p,.connection-app-info small{font-size:12px;color:var(--text-muted,#8a9caa)}.connection-card-actions{display:flex;flex-direction:column;gap:18px;align-items:flex-end}.connection-badge{display:flex;gap:8px;align-items:center;font-size:12px;color:#c89c64}.connection-badge.is-live{color:#6cd4b0}.connections-explainer{display:flex;gap:35px;flex-wrap:wrap;padding:22px 0;color:var(--text-muted,#8a9caa);font-size:11px}.connections-explainer span{display:flex;align-items:center;gap:8px}.connected-issues{margin-top:34px}.connected-section-heading{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border,#29404b);padding-bottom:20px}.connected-section-heading h2{font-size:20px}.connected-section-heading span{font-size:12px;color:var(--text-muted,#8a9caa)}.connections-empty{text-align:center;border:1px dashed var(--border,#29404b);border-radius:12px;margin-top:24px;padding:52px 20px;color:var(--text-muted,#8a9caa)}.connections-empty svg{color:#67a79e}.connections-empty h3{margin:20px 0 10px}.connections-empty p{font-size:13px}.connected-issue{padding:25px 0;display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--border,#29404b)}.connected-issue h3{margin:10px 0;font-size:17px}.connected-issue p{font-size:12px;color:var(--text-muted,#8a9caa)}.connected-issue .eyebrow{font-size:9px}.connection-alert{border:1px solid #866b40;background:#866b401a;border-radius:8px;padding:15px;font-size:13px;line-height:1.6}@media(max-width:720px){.connections-main{padding:35px 20px}.connection-card{flex-wrap:wrap;padding:22px}.connection-card-actions{align-items:flex-start;width:100%}.connected-issue{align-items:flex-start;flex-direction:column}.connections-explainer{gap:16px}}
+.connections-main { max-width: 1200px; margin: auto; padding: 64px 28px; }
+.connections-main > h1 { font-size: clamp(36px, 5vw, 58px); letter-spacing: -2px; line-height: 1.12; margin: 16px 0 22px; }
+.connections-lede { max-width: 720px; line-height: 1.8; color: var(--text-2); font-size: 15px; }
+.connection-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; padding: 30px; margin-top: 42px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.connection-app-icon { width: 70px; height: 70px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 16px; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.connection-app-info .eyebrow { margin: 0 0 10px; }
+.connection-app-info h2 { font-size: 24px; margin: 0 0 8px; }
+.connection-app-info p, .connection-app-info small { display: block; margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+.connection-card-actions { display: flex; flex-direction: column; gap: 14px; align-items: flex-end; }
+.journey-health { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 0; padding: 18px 0 0; border-top: 1px solid var(--border); list-style: none; font-size: 13px; color: var(--text-2); }
+.journey-health li { display: flex; align-items: center; gap: 8px; }
+.journey-health-summary { margin-right: 6px; font-weight: 700; color: var(--text); }
+.connections-explainer { display: flex; flex-wrap: wrap; gap: 35px; padding: 22px 0; color: var(--muted); font-size: 13px; }
+.connections-explainer span { display: flex; align-items: center; gap: 8px; }
+.connected-issues { margin-top: 34px; }
+.connected-section-heading { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.connected-section-heading h2 { font-size: 20px; margin: 0; }
+.connected-section-heading span { font-size: 13px; color: var(--muted); }
+.connections-empty { margin-top: 24px; padding: 52px 20px; text-align: center; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--muted); }
+.connections-empty svg { color: var(--ai); }
+.connections-empty h3 { margin: 20px 0 10px; color: var(--text); }
+.connections-empty p { font-size: 14px; }
+.connected-issue { --tone: var(--border-2); display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 18px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--tone); }
+.connected-issue.tone-ok { --tone: var(--ok); }
+.connected-issue.tone-fail { --tone: var(--fail); }
+.connected-issue.tone-warn { --tone: var(--warn); }
+.connected-issue.tone-pending { --tone: var(--ai); }
+.connected-issue.is-active { background: color-mix(in srgb, var(--tone) 7%, transparent); }
+.connected-issue h3 { margin: 10px 0 6px; font-size: 17px; }
+.connected-issue p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.connected-issue-waiting { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.connection-alert { margin: 24px 0 0; padding: 15px; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 14px; line-height: 1.6; }
+@media (max-width: 720px) {
+  .connections-main { padding: 35px 20px; }
+  .connection-card { grid-template-columns: auto 1fr; padding: 22px; }
+  .connection-card-actions { grid-column: 1 / -1; align-items: flex-start; }
+  .connected-issue { align-items: flex-start; flex-direction: column; }
+  .connections-explainer { gap: 16px; }
+}

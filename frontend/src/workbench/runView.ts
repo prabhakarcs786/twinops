@@ -3,6 +3,11 @@ import { buildProofPack, type ApplyOutcome, type IncidentSession, type RunResult
 import type { ApprovalRecord } from '../engine/types.ts';
 import { download, proofPackHtml } from './proofPackHtml.ts';
 
+/** How the observed network is named: the synthetic demo, or a connected application such as Metro Network. */
+export interface TargetCopy { name: string; prose: string; kicker: string; note: string; impact: string }
+export const DEMO_TARGET: TargetCopy = { name: 'Demo network', prose: 'the demo network', kicker: 'Production stand-in', note: 'Synthetic · read-only to TwinOps · writes only via approved apply gateway', impact: 'Demo service impact' };
+export const CONNECTED_TARGET: TargetCopy = { name: 'Metro Network', prose: 'Metro Network', kicker: 'Connected application', note: 'Real Containerlab lab · observed through its API · writes only via approved apply gateway', impact: 'Metro Network service impact' };
+
 /** What the evidence and approval UI needs, independent of where the run executed. */
 export interface RunView {
   run: RunResult;

@@ -156,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "approvalAuth": settings.operator_token is not None,
             "harness": settings.harness_enabled and not settings.network_url,
             "connectedApplication": bool(settings.network_url),
+            "networkUrl": settings.network_url or None,
             "activeRuns": registry.active(),
             "variants": [{"id": variant, "label": label} for variant, label in VARIANTS.items()]
             if settings.harness_enabled and settings.twin == "model" else [],

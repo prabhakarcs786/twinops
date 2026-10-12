@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StatusChip } from '../components/StatusChip.tsx';
 import type { CandidateRecord, Frame, Observation, RunEvent } from '../engine/types.ts';
-import type { RunView } from './runView.ts';
+import { DEMO_TARGET, type RunView, type TargetCopy } from './runView.ts';
 import { fmtClock } from './usePlayback.ts';
 
 const FACT_GROUPS = ['Observed', 'Hypotheses', 'Test results', 'Limits'] as const;
@@ -37,7 +37,7 @@ export function EvidenceFacts({ view, frame, observation, ready, sources, backen
   </div>;
 }
 
-export function ImpactSummary({ frame, view, ready }: { frame: Frame; view: RunView | null; ready: boolean }) {
+export function ImpactSummary({ frame, view, ready, target = DEMO_TARGET }: { frame: Frame; view: RunView | null; ready: boolean; target?: TargetCopy }) {
   const journeys = Object.values(frame.prod.probes);
   const affected = journeys.filter((p) => !p.ok);
   const selected = ready ? view?.run.selected : null;
@@ -45,8 +45,8 @@ export function ImpactSummary({ frame, view, ready }: { frame: Frame; view: RunV
   const restored = selected?.fixed.filter((p) => p.kind === 'journey' && p.ok && original.some((o) => o.id === p.id)).length ?? 0;
   return (
     <section className="impact-summary" aria-label="Service impact">
-      <div><span className="stage-kicker">Demo service impact</span><strong>{affected.length} of {journeys.length} journeys failing</strong>
-        <span>{affected.length ? affected.map((p) => p.label).join(' · ') : frame.prod.status === 'restored' ? 'Recovery measured on the demo network' : 'All observed journeys reachable'}</span></div>
+      <div><span className="stage-kicker">{target.impact}</span><strong>{affected.length} of {journeys.length} journeys failing</strong>
+        <span>{affected.length ? affected.map((p) => p.label).join(' · ') : frame.prod.status === 'restored' ? `Recovery measured on ${target.prose}` : 'All observed journeys reachable'}</span></div>
       <div><span className="stage-kicker">Tested recovery</span><strong>{selected ? `${restored} of ${original.length} affected journeys verified in twin` : 'Waiting for verified evidence'}</strong>
         <span>{selected ? `${selected.touched.length} device${selected.touched.length === 1 ? '' : 's'} changed · ${selected.challenges.length} challenges · rollback ${selected.rollback.matches ? 'rehearsed' : 'unverified'}` : 'A recommendation appears only after the defined checks.'}</span></div>
       {selected && restored < original.length && <p className="coverage-note">{original.length - restored} affected journeys are outside the tested slice. Recovery there is not established by this evidence.</p>}

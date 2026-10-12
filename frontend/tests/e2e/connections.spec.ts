@@ -32,6 +32,23 @@ test('connected workbench does not inject a new fault from an old autostart link
   expect(created).toBe(0);
 });
 
+test('connected workbench follows the active investigation without a link', async ({ page }) => {
+  await page.route('**/api/config', (route) => route.fulfill({ json: {
+    version: 'test', planner: { kind: 'runbook', provider: 'runbook', model: 'runbook' },
+    twin: { backend: 'emulated', ready: true, detail: 'Containerlab' }, harness: false, connectedApplication: true,
+  } }));
+  await page.route('**/api/connections', (route) => route.fulfill({ json: {
+    configured: true, connected: true, ready: true, issues: [{ id: 'source-1', title: 'Service disruption', status: 'open', incidentId: 'inc-net-123', detectedAt: 1791670000 }],
+  } }));
+  await page.route('**/api/incidents/inc-net-123', (route) => route.fulfill({ json: {
+    incidentId: 'inc-net-123', status: 'investigating', seed: 7, run: null, approval: null, outcome: null, narrative: null,
+    error: null, createdAt: 1791670000, recovered: false, pack: 'core',
+  } }));
+  await page.route('**/api/incidents/inc-net-123/events', (route) => route.abort());
+  await page.goto('/workbench');
+  await expect(page).toHaveURL(/incident=inc-net-123/);
+});
+
 test('unconfigured connection explains how to start the two-app demo', async ({ page }) => {
   await page.route('**/api/connections', (route) => route.fulfill({ json: { configured: false, connected: false, issues: [] } }));
   await page.goto('/connections');

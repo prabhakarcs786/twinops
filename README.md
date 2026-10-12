@@ -43,8 +43,9 @@ The router image now pins FRR 10.5.5; the older 9.1.3 image crashed during start
    on the separate Containerlab twin. No fault label is sent to the planner.
 5. Review and approve a passing candidate in TwinOps. Its apply gateway calls Metro Network's API;
    Metro Network changes the real lab devices. Fresh probes verify recovery in both screens.
-6. Use **Reset completed scenario** in Metro Network before another exercise. Reset is blocked during
-   an investigation or uncertain recovery. Reject a pending approval first if you want to abandon it.
+6. After a verified recovery, choose the next fault directly: Metro Network moves the scenario to Recent issues
+   and restores the healthy baseline before injecting. A scenario that ended without recovery needs **Reset scenario**.
+   Reset is blocked during an investigation or uncertain recovery. Reject a pending approval first if you want to abandon it.
 
 Gemini can use a local key file without copying the credential into configuration:
 

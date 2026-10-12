@@ -1,6 +1,6 @@
-import { Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
+import { ArrowUpRight, Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
-import { createIncident as createLiveIncident, fetchConfig, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident, type StreamState } from '../api/live.ts';
+import { createIncident as createLiveIncident, fetchConfig, getActiveInvestigation, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident, type StreamState } from '../api/live.ts';
 import { SiteHeader } from '../components/SiteHeader.tsx';
 import { StatusChip } from '../components/StatusChip.tsx';
 import { FAULT_INFO, SUPPORTED_FAULTS } from '../engine/harness.ts';
@@ -17,10 +17,11 @@ import { BenchmarkPanel } from './BenchmarkPanel.tsx';
 import { ReviewMetrics } from './ReviewTrial.tsx';
 import { Evidence, type AskTarget, type EvidenceTab } from './Evidence.tsx';
 import { CandidateBoard, Counters, PhaseStepper, Stage, Timeline } from './panels.tsx';
-import { liveView, localView, type RunView } from './runView.ts';
+import { CONNECTED_TARGET, DEMO_TARGET, liveView, localView, type RunView } from './runView.ts';
 import { fmtClock, usePlayback } from './usePlayback.ts';
 
 const SPEEDS = [0.5, 1, 2, 4];
+const shortId = (id: string) => (id.length > 20 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id);
 const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed', 'recovery_required']);
 const OUTCOME_KINDS = new Set(['post_check', 'rolled_back', 'drift_detected', 'approval_rejected', 'recovery_required']);
 
@@ -180,6 +181,29 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     const timer = window.setTimeout(() => initialResume(), 0);
     return () => window.clearTimeout(timer);
   }, [params.incident, backend]);
+
+  // Connected mode: TwinOps starts investigations itself, so this view follows them instead of waiting for a link.
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const watching = Boolean(backend?.connectedApplication);
+  const followActive = useEffectEvent((id: string) => {
+    if (!incident && !starting && !params.incident) void resumeIncident(id);
+  });
+  useEffect(() => {
+    if (!watching) return;
+    let stopped = false;
+    let timer: number;
+    const poll = async () => {
+      try {
+        const id = await getActiveInvestigation();
+        if (stopped) return;
+        setActiveId(id);
+        if (id) followActive(id);
+      } catch { /* keep the last known investigation */ }
+      if (!stopped) timer = window.setTimeout(() => void poll(), 3000);
+    };
+    void poll();
+    return () => { stopped = true; window.clearTimeout(timer); };
+  }, [watching]);
 
 
   // Probe for a backend once; without one the workbench runs the in-browser engine.
@@ -346,6 +370,9 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const runId = view?.run.runId ?? live?.id ?? session?.run.runId ?? '';
   const seed = live?.seed ?? session?.run.seed;
   const twinLabel = backend?.twin.backend === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
+  const connected = Boolean(backend?.connectedApplication);
+  const resolving = backend === undefined;
+  const target = connected ? CONNECTED_TARGET : DEMO_TARGET;
   const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth);
   const thinking = current?.kind === 'model_call' ? current : undefined;
   const activePlanner = view?.run.planner ?? backend?.planner;
@@ -364,10 +391,12 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           <div className="wb-title">
             <p className="eyebrow">Live workbench</p>
             <h1>
-              {backend?.connectedApplication ? 'Observe it.' : 'Break it.'} <span className="grad-text">Watch TwinOps prove the fix.</span>
+              {resolving ? '' : connected ? 'Observe it. ' : 'Break it. '}<span className="grad-text">Watch TwinOps prove the fix.</span>
             </h1>
-            <p className="mode-line">
-              {engine === 'live' && backend ? (
+            <p className="mode-line" aria-busy={resolving}>
+              {resolving ? (
+                <StatusChip tone="pending">Checking connection…</StatusChip>
+              ) : engine === 'live' && backend ? (
                 <>
                   <StatusChip tone="ok">Live backend</StatusChip>
                   <span className="engine-detail">
@@ -393,8 +422,8 @@ export function Workbench({ theme, onToggleTheme }: Props) {
             </p>
           </div>
 
-          {backend?.connectedApplication ? <div className="wb-controls"><a className="btn btn-primary" href="/connections">Connected applications →</a><p className="engine-detail">Incidents are detected automatically. Review the evidence below; live changes require your approval.</p></div> : <div className="wb-controls">
-            <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running || backend === undefined}>
+          {resolving ? <div className="wb-controls wb-controls-loading" role="status" aria-live="polite"><span className="wb-skeleton" aria-hidden="true" /><p className="engine-detail">Checking whether TwinOps is connected to Metro Network…</p></div> : connected ? <div className="wb-controls"><div className="wb-control-links"><a className="btn btn-primary" href="/connections">Connected applications →</a>{backend?.networkUrl && <a className="btn btn-ghost" href={backend.networkUrl} target="_blank" rel="noreferrer">Open Metro Network <ArrowUpRight size={16} aria-hidden="true" /></a>}</div><p className="engine-detail">Incidents detected in Metro Network open here automatically. Live changes require your approval.</p></div> : <div className="wb-controls">
+            <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running}>
               <span className="btn-break-glow" aria-hidden="true" />
               <Zap size={22} aria-hidden="true" />
               <span>{running ? 'Investigating…' : hasRun ? 'Break it again' : 'Break the network'}</span>
@@ -466,36 +495,43 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           {live && <span className="connection-state" role="status">{live.ended ? 'Evidence synchronized' : streamState === 'connected' ? 'Live events connected' : streamState === 'reconnecting' ? 'Connection lost · reconnecting…' : 'Connecting to incident…'}</span>}
           {live && !live.ended && ['closed', 'reconnecting'].includes(streamState) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStreamAttempt((n) => n + 1)}>Reconnect</button>}
         </div>
+        {connected && activeId && incident && activeId !== live?.id && (
+          <div className="follow-notice" role="status">
+            <span className="follow-dot" aria-hidden="true" />
+            <p>Metro Network has a new incident under investigation.</p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void resumeIncident(activeId)} disabled={starting}>Follow live investigation</button>
+          </div>
+        )}
         {resumeError && <div className="recovery-notice" role="alert"><p>{resumeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => void resumeIncident(live?.id ?? params.incident ?? '')}>Retry loading evidence</button></div>}
         {live?.detail?.recovered && <p className="recovery-notice">Saved evidence · {live.detail.outcome?.reason ?? 'This incident is complete and retained for review.'}</p>}
         {view?.run.exercise === 'provider_outage' && <p className="recovery-notice" role="status">Simulated provider outage. No model request was sent; the runbook fallback was tested through the same gates.</p>}
         {view?.run.variant && view.run.variant !== 'standard' && <p className="scenario-notice">Scenario variant: {backend?.variants?.find((variant) => variant.id === view.run.variant)?.label ?? view.run.variant.replaceAll('_', ' ')}</p>}
-        <ImpactSummary frame={frame} view={view} ready={verdictVisible} />
+        <ImpactSummary frame={frame} view={view} ready={verdictVisible} target={target} />
         <div className="wb-grid">
             <div className="wb-metrics">
               <PhaseStepper seen={seen} current={frame.phase} />
-              <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} />
+              <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} target={target} />
             </div>
             <section className={`verdict-card ${verdict ? `v-${verdict.toLowerCase()}` : failedEvent ? 'v-inconclusive' : hasRun || starting ? 'v-running' : 'v-idle'}`} aria-labelledby="verdict-title">
               {!hasRun && !starting && (
                 <>
                   <p className="stage-kicker">How to read this</p>
                   <h2 id="verdict-title">Every recommendation carries evidence.</h2>
-                  <p>{backend?.connectedApplication ? 'TwinOps detects service failures in Metro Network through its API, reproduces them in an isolated twin and tests fixes before asking for your approval.' : 'The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.'}</p>
+                  <p>{resolving ? 'Checking the connection…' : connected ? 'TwinOps detects service failures in Metro Network through its API, reproduces them in an isolated twin and tests fixes before asking for your approval.' : 'The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.'}</p>
                 </>
               )}
               {(starting || hasRun) && !verdict && !failedEvent && (
                 <>
-                  <p className="stage-kicker">{runId ? `Run ${runId} · seed ${seed}` : 'Contacting the backend'}</p>
+                  <p className="stage-kicker" title={runId || undefined}>{runId ? `Run ${shortId(runId)} · seed ${seed}` : 'Contacting the backend'}</p>
                   <h2 id="verdict-title">Investigating — {frame.phase}</h2>
                   <div className="scan" aria-hidden="true" />
                   {thinking && <ModelThinking key={thinking.seq} event={thinking} />}
-                  <p>{backend?.connectedApplication ? 'Source: Metro Network · observed through its API' : <>Sealed fault: <span className="sealed">••••••••</span></>}</p>
+                  <p>{connected ? 'Source: Metro Network · observed through its API' : <>Sealed fault: <span className="sealed">••••••••</span></>}</p>
                 </>
               )}
               {failedEvent && !verdict && (
                 <>
-                  <p className="stage-kicker">Run {runId}</p>
+                  <p className="stage-kicker" title={runId}>Run {shortId(runId)}</p>
                   <h2 id="verdict-title" className="stamp">
                     {VERDICT_LABEL.INCONCLUSIVE}
                   </h2>
@@ -504,8 +540,8 @@ export function Workbench({ theme, onToggleTheme }: Props) {
               )}
               {view && verdict && (
                 <>
-                  <p className="stage-kicker">
-                    Verdict · {view.run.runId}
+                  <p className="stage-kicker" title={view.run.runId}>
+                    Verdict · {shortId(view.run.runId)}
                   </p>
                   <h2 id="verdict-title" className="stamp">
                     {VERDICT_LABEL[verdict]}
@@ -573,6 +609,12 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                       <span>{outcome.reason}</span>
                     </p>
                   )}
+                  {connected ? (
+                    <p className="verdict-source">
+                      Source: Metro Network · TwinOps received observations, not a fault label.
+                      {backend?.networkUrl && <> <a href={backend.networkUrl} target="_blank" rel="noreferrer">Open Metro Network <ArrowUpRight size={13} aria-hidden="true" /></a></>}
+                    </p>
+                  ) : (
                   <button type="button" className="reveal" onClick={() => void onReveal()} aria-expanded={reveal}>
                     {reveal ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
                     {reveal && sealedLabel ? (
@@ -583,6 +625,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                       <span>Reveal the sealed fault</span>
                     )}
                   </button>
+                  )}
                   <p className="verdict-meta">
                     {live
                       ? `Server compute ${(view.run.computeMs / 1000).toFixed(1)} s · ${view.run.mode} · time to verdict ${fmtClock(verdictWall ?? wall)}`
@@ -592,7 +635,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
               )}
             </section>
           <div className="wb-left">
-            <Stage topo={topo} frame={frame} animate={!reduced} />
+            <Stage topo={topo} frame={frame} animate={!reduced} target={target} />
             <CandidateBoard frame={frame} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />
           </div>
           <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />
@@ -625,7 +668,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           requirePasscode={engine === 'live' && Boolean(backend?.approvalAuth)}
           busy={decisionBusy}
           error={decisionError}
-          targetLabel={live && backend?.twin.backend === 'emulated' ? 'Containerlab prod lab only' : 'demo network only'}
+          targetLabel={connected ? 'Metro Network (Containerlab prod lab) only' : live && backend?.twin.backend === 'emulated' ? 'Containerlab prod lab only' : 'demo network only'}
           onClose={() => setDialogOpen(false)}
           onDecide={(...args) => void onDecide(...args)}
         />

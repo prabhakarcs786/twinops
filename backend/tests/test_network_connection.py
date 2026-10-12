@@ -123,6 +123,27 @@ def test_atomic_drift_check_idempotency_and_rollback(tmp_path):
     asyncio.run(run())
 
 
+def test_recovered_scenario_is_replaced_by_the_next_fault(tmp_path, monkeypatch):
+    async def run():
+        _, _, state, client = fixture(tmp_path)
+        monkeypatch.setattr('twinops.network_app.LabDemoNetwork', lambda *_: DeviceDouble())
+        async with client:
+            body = await prepare_apply(state, client)
+            assert (await client.post('/api/apply', json=body)).status_code == 200
+            await state.refresh()
+            assert state.issue['status'] == 'resolved'
+            # The investigation still owns the recovered issue until TwinOps finishes it.
+            assert (await client.post('/api/faults', json={'fault': 'cert_expiry'})).status_code == 409
+            finish = {'incidentId': body['incidentId'], 'status': 'finished'}
+            assert (await client.post(f"/api/issues/{body['issueId']}/finish", json=finish)).status_code == 200
+            response = await client.post('/api/faults', json={'fault': 'cert_expiry'})
+            assert response.status_code == 200, response.text
+            assert state.history[-1]['id'] == body['issueId'] and state.history[-1]['status'] == 'resolved'
+            assert state.operation is None
+            assert state.issue and state.issue['id'] != body['issueId']
+    asyncio.run(run())
+
+
 def test_interrupted_write_is_quarantined_on_restart(tmp_path):
     async def run():
         settings, network, state, client = fixture(tmp_path)

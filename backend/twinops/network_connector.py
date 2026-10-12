@@ -93,8 +93,11 @@ class NetworkMonitor:
     async def tick(self):
         remote = await self.client.call('/api/connector')
         issue = remote.get('issue')
+        probes = (remote.get('observation') or {}).get('probes', [])
         self.status.update(connected=True, ready=remote['ready'], detail=remote.get('error') or 'Automatic detection active · checked every 5 seconds',
                            url=self.registry.settings.network_url, checkedAt=remote.get('checkedAt'), recoveryRequired=remote['recoveryRequired'],
+                           operation=remote.get('operation'),
+                           journeys=[{'id': p['id'], 'label': p['label'], 'ok': p['ok']} for p in probes if p.get('kind') == 'journey'],
                            issues=([issue] if issue else []) + list(reversed(remote.get('history', []))))
         if not issue or not remote['ready'] or remote['recoveryRequired'] or issue['status'] == 'resolved':
             return

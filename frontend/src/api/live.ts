@@ -10,6 +10,7 @@ export interface BackendConfig {
   approvalAuth: boolean;
   harness: boolean;
   connectedApplication?: boolean;
+  networkUrl?: string | null;
   variants?: { id: ScenarioVariant; label: string }[];
 }
 
@@ -78,6 +79,12 @@ export const createIncident = (body: { pack: PackId; fault: 'random' | FaultId; 
   json<{ incidentId: string; seed: number; eventsUrl: string; createdAt: number }>('/api/incidents', { method: 'POST', body: JSON.stringify(body) });
 
 export const getIncident = (id: string) => json<LiveIncident>(`/api/incidents/${encodeURIComponent(id)}`);
+
+/** Connected mode: the investigation TwinOps is running for an open network issue, if any. */
+export async function getActiveInvestigation(): Promise<string | null> {
+  const data = await json<{ issues?: { incidentId: string | null; status: string }[] }>('/api/connections');
+  return data.issues?.find((issue) => issue.incidentId && issue.status === 'open')?.incidentId ?? null;
+}
 
 const auth = (token?: string): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
 
