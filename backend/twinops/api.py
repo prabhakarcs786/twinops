@@ -79,14 +79,22 @@ class RateLimiter:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     registry = Registry(settings)
+    from .network_connector import NetworkMonitor
+    monitor = NetworkMonitor(registry) if settings.network_url else None
     limiter = RateLimiter(settings.rate_limit_per_min)
     ask_limiter = RateLimiter(max(6, settings.rate_limit_per_min), "questions")
     review_limiter = RateLimiter(max(6, settings.rate_limit_per_min), "review trials")
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if monitor:
+            monitor.start()
         yield
+        if monitor:
+            await monitor.stop()
         await registry.shutdown()
+        if monitor:
+            await monitor.close()
 
     app = FastAPI(title="TwinOps", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None, lifespan=lifespan)
     app.state.registry = registry
@@ -146,11 +154,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "packs": [{"id": k, "name": v["name"]} for k, v in PACKS.items()],
             "faults": [{"id": f, **FAULT_INFO[f], "supported": f in SUPPORTED_FAULTS} for f in ALL_FAULTS],
             "approvalAuth": settings.operator_token is not None,
-            "harness": settings.harness_enabled,
+            "harness": settings.harness_enabled and not settings.network_url,
+            "connectedApplication": bool(settings.network_url),
             "activeRuns": registry.active(),
             "variants": [{"id": variant, "label": label} for variant, label in VARIANTS.items()]
             if settings.harness_enabled and settings.twin == "model" else [],
         }
+
+    @app.get('/api/connections')
+    async def connections() -> dict[str, Any]:
+        return monitor.status if monitor else {'configured': False, 'connected': False, 'issues': []}
 
     @app.post("/api/incidents", status_code=202)
     async def create_incident(body: IncidentRequest, request: Request) -> dict[str, Any]:

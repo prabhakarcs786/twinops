@@ -20,6 +20,8 @@ __pycache__/
 id_rsa
 id_rsa.*
 secrets.json
+google-key
+local-app/.data/
 *.p12
 *.pfx
 credentials

@@ -129,6 +129,7 @@ class IncidentSession:
     twin: Twin
     planner: Planner
     pace: float
+    external: bool = False
     run: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
     approval: dict[str, Any] | None = None
@@ -174,14 +175,16 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
     versions = {"engine": ENGINE_VERSION, "topology": topo["version"], "catalogue": CATALOGUE_VERSION, "policy": POLICY_VERSION, "planner": planner.version,
                 "twin": twin.backend}
 
-    await demo.inject_fault(session.sealed_fault)
+    if not session.external:
+        await demo.inject_fault(session.sealed_fault)
     obs = await demo.observe()
     failing = [p for p in obs["probes"] if p["kind"] == "journey" and not p["ok"]]
 
     def prod_frame(f: dict[str, Any]) -> None:
         f["prod"] = {"probes": _by_id([p for p in obs["probes"] if p["kind"] == "journey"]), "alarmNodes": list(dict.fromkeys(a["node"] for a in obs["alarms"])), "status": "incident"}
 
-    await push(0, "fault_injected", "break", "harness", "fail", "Network broken — fault label sealed",
+    await push(0, "incident_detected" if session.external else "fault_injected", "observe" if session.external else "break",
+               "observer" if session.external else "harness", "fail", "Connected application incident detected" if session.external else "Network broken — fault label sealed",
                f"{len(failing)} of {len(topo['journeys'])} customer journeys failing. TwinOps receives observations only, never the fault label.",
                {"harness": demo.writes[0] if demo.writes else None, "sealed": True, "network": demo.backend}, prod_frame)
     await push(2200, "observed", "observe", "observer", "prod", "Read-only snapshot captured",
@@ -385,6 +388,7 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
 
     run = {
         "runId": session.incident_id, "seed": seed, "pack": topo["pack"], "versions": versions,
+        "source": {"kind": "connected_application", "name": "Metro Network", "issueId": demo.issue_id} if session.external else {"kind": "demo_harness"},
         "variant": getattr(demo, "variant", "standard"),
         "exercise": session.exercise,
         "mode": f"{planner.mode} · {twin.backend} twin", "planner": {"kind": planner.kind, "provider": getattr(planner, "provider", "none"), "model": getattr(planner, "model", "none")},

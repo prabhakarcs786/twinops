@@ -61,7 +61,8 @@ class GeminiClient:
             response_json_schema=schema,
             temperature=0.0,
             max_output_tokens=4096,
-            thinking_config=types.ThinkingConfig(thinking_budget=self._thinking),
+            thinking_config=(types.ThinkingConfig(thinking_level="low") if self.model.startswith("gemini-3")
+                             else types.ThinkingConfig(thinking_budget=self._thinking)),
         )
         try:
             resp = await asyncio.wait_for(self._client.aio.models.generate_content(model=self.model, contents=_payload_text(payload), config=config), self._timeout)

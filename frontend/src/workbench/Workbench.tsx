@@ -263,7 +263,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     void breakNetwork();
   });
   useEffect(() => {
-    if (!params.autostart || params.incident || backend === undefined) return;
+    if (!params.autostart || params.incident || backend === undefined || backend?.connectedApplication) return;
     const t = window.setTimeout(() => onAutostart(), 0);
     return () => window.clearTimeout(t);
   }, [params.autostart, params.incident, backend]);
@@ -364,7 +364,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           <div className="wb-title">
             <p className="eyebrow">Live workbench</p>
             <h1>
-              Break it. <span className="grad-text">Watch TwinOps prove the fix.</span>
+              {backend?.connectedApplication ? 'Observe it.' : 'Break it.'} <span className="grad-text">Watch TwinOps prove the fix.</span>
             </h1>
             <p className="mode-line">
               {engine === 'live' && backend ? (
@@ -380,7 +380,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                   <span>{PLANNER_MODE} · synthetic data only · no production access</span>
                 </>
               )}
-              {backend && (
+              {backend && !backend.connectedApplication && (
                 <span className="segmented" role="group" aria-label="Engine">
                   <button type="button" aria-pressed={engine === 'live'} className={engine === 'live' ? 'is-on' : ''} onClick={() => changeEngine('live')} disabled={running}>
                     Live
@@ -393,7 +393,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
             </p>
           </div>
 
-          <div className="wb-controls">
+          {backend?.connectedApplication ? <div className="wb-controls"><a className="btn btn-primary" href="/connections">Connected applications →</a><p className="engine-detail">Incidents are detected automatically. Review the evidence below; live changes require your approval.</p></div> : <div className="wb-controls">
             <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running || backend === undefined}>
               <span className="btn-break-glow" aria-hidden="true" />
               <Zap size={22} aria-hidden="true" />
@@ -456,7 +456,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 <label className="memory-toggle"><input type="checkbox" checked={useMemory} onChange={(event) => setUseMemory(event.target.checked)} disabled={running} />Retest compatible historical fixes</label>
               </div>
             </details>}
-          </div>
+          </div>}
         </section>
 
         <div className="workbench-toolbar">
@@ -481,7 +481,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 <>
                   <p className="stage-kicker">How to read this</p>
                   <h2 id="verdict-title">Every recommendation carries evidence.</h2>
-                  <p>The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.</p>
+                  <p>{backend?.connectedApplication ? 'TwinOps detects service failures in Metro Network through its API, reproduces them in an isolated twin and tests fixes before asking for your approval.' : 'The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.'}</p>
                 </>
               )}
               {(starting || hasRun) && !verdict && !failedEvent && (
@@ -490,7 +490,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                   <h2 id="verdict-title">Investigating — {frame.phase}</h2>
                   <div className="scan" aria-hidden="true" />
                   {thinking && <ModelThinking key={thinking.seq} event={thinking} />}
-                  <p>Sealed fault: <span className="sealed">••••••••</span></p>
+                  <p>{backend?.connectedApplication ? 'Source: Metro Network · observed through its API' : <>Sealed fault: <span className="sealed">••••••••</span></>}</p>
                 </>
               )}
               {failedEvent && !verdict && (

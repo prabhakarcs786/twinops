@@ -44,6 +44,7 @@ export function SiteHeader({ variant, theme, onToggleTheme }: Props) {
         {variant === 'app' && <span className="app-crumb">Workbench</span>}
 
         <div className="site-actions">
+          <Link to="/connections" className="btn btn-ghost btn-sm">Applications</Link>
           <button type="button" className="icon-btn" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>

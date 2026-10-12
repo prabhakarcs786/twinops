@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..model import State, parse_iso
-from .plan import ADMIN, B17_AS, DNS, GW_VIPS, GW_VIPS_V6, IMAGES, MGMT_SUBNETS, POPS
+from .plan import ADMIN, B17_AS, DNS, GW_VIPS, GW_VIPS_V6, IMAGES, POPS, management_subnets
 
 HOSTNAME = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
 SERIAL = re.compile(r"^c-[0-9a-f]{3,12}$")
@@ -263,7 +263,7 @@ def read_leaf(path: Path) -> dict[str, Any]:
 # ---------- Containerlab topology ----------
 
 def topology(instance: str) -> dict[str, Any]:
-    v4, v6 = MGMT_SUBNETS[instance]
+    v4, v6 = management_subnets(instance)
     fwd = {"net.ipv4.ip_forward": 1, "net.ipv6.conf.all.forwarding": 1, "net.ipv6.conf.all.disable_ipv6": 0, "net.ipv6.conf.default.disable_ipv6": 0}
     v6on = {"net.ipv6.conf.all.disable_ipv6": 0, "net.ipv6.conf.default.disable_ipv6": 0}
     nodes: dict[str, Any] = {

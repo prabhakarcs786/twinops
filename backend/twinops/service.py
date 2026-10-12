@@ -131,11 +131,13 @@ class Registry:
         return ModelDemoNetwork(topo, seed, variant), ModelTwin()
 
     def _release_lab(self) -> None:
-        if self.settings.twin == "emulated" and self._lab_lock.locked():
+        if (self.settings.twin == "emulated" or self.settings.network_url) and self._lab_lock.locked():
             self._lab_lock.release()
 
     async def create(self, pack: str, fault: str, seed: int | None, pace: float, include_evaluation_case: bool,
                      variant: ScenarioVariant = "standard", use_memory: bool = True, simulate_outage: bool = False) -> LiveIncident:
+        if self.settings.network_url:
+            raise ValueError("Connected mode detects incidents automatically. Create faults in the network application.")
         if variant not in VARIANTS:
             raise ValueError("unknown scenario variant")
         if (variant != "standard" or simulate_outage) and (not self.settings.harness_enabled or self.settings.twin != "model"):
@@ -157,6 +159,32 @@ class Registry:
         self._evict()
         live.task = asyncio.create_task(self._run(live, include_evaluation_case))
         return live
+
+    async def create_external(self, client: Any, issue: dict, topo: dict, incident_id: str) -> LiveIncident:
+        from .lab.backend import EmulatedTwin, runtime_dir
+        from .lab.device import LabInstance
+        from .lab.runner import DockerRunner
+        from .network_connector import RemoteNetwork
+
+        if self.store.needs_recovery():
+            raise BusyError("A previous apply needs operator recovery")
+        await self._lab_lock.acquire()
+        try:
+            planner = build_planner(settings=self.settings)
+            await client.call(f"/api/issues/{issue['id']}/claim", {"incidentId": incident_id})
+            demo = RemoteNetwork(client, issue['id'], incident_id)
+            twin = EmulatedTwin(LabInstance('twin', runtime_dir(self.settings), topo, DockerRunner()))
+            session = IncidentSession(incident_id, 'external', demo, twin, planner, pace=0, external=True)
+            session.recall = lambda observation: recall_candidates(self.store.recent(), observation, topo, twin.backend, twin.supported_actions)
+            live = LiveIncident(session=session, topo=topo, seed=7)
+            live.persist = lambda: self._persist(live)
+            self.incidents[incident_id] = live
+            self._persist(live)
+            live.task = asyncio.create_task(self._run(live, False))
+            return live
+        except BaseException:
+            self._release_lab()
+            raise
 
     async def _run(self, live: LiveIncident, include_evaluation_case: bool) -> None:
         try:
@@ -193,6 +221,8 @@ class Registry:
         with contextlib.suppress(Exception):
             await live.session.twin.close()
         with contextlib.suppress(Exception):
+            if live.session.external:
+                live.session.demo.finish_status = 'recovery_required' if live.session.status == 'recovery_required' else 'finished'
             await live.session.demo.close()
         self._release_lab()
 
@@ -217,6 +247,10 @@ class Registry:
         finally:
             if live.session.status == "closed":
                 await self._close_backends(live)
+            elif live.session.status == 'recovery_required' and live.session.external:
+                live.session.demo.finish_status = 'recovery_required'
+                with contextlib.suppress(Exception):
+                    await live.session.demo.close()
             await live.notify()
 
     async def drift(self, live: LiveIncident) -> None:
@@ -250,6 +284,8 @@ class Registry:
     def reveal(self, live: LiveIncident) -> dict[str, str]:
         if live.session.status == "running":
             raise ValueError("the fault stays sealed until the verdict")
+        if live.session.sealed_fault == 'external':
+            return {"code": "API", "label": "Externally detected incident", "description": "TwinOps received observations from Metro Network, not a fault label."}
         return FAULT_INFO[live.session.sealed_fault]
 
     def _evict(self, keep: int = 50) -> None:
@@ -267,7 +303,10 @@ class Registry:
             if live.task and not live.task.done():
                 live.task.cancel()
                 tasks.append(live.task)
-            if not live.finished:
-                await self._close_backends(live)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for live in self.incidents.values():
+            if not live.finished:
+                if live.session.status == 'applying':
+                    live.session.status = 'recovery_required'
+                await self._close_backends(live)

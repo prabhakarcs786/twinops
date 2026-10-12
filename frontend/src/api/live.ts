@@ -9,6 +9,7 @@ export interface BackendConfig {
   twin: { backend: 'model' | 'emulated'; ready: boolean; detail: string };
   approvalAuth: boolean;
   harness: boolean;
+  connectedApplication?: boolean;
   variants?: { id: ScenarioVariant; label: string }[];
 }
 

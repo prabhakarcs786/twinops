@@ -23,6 +23,70 @@ For how it works internally, what is real versus simulated, and the path to prod
 
 ## Quick start
 
+### Two-application demo with real network faults
+
+Start Docker Desktop, then run from the repository root:
+
+```sh
+npm run dev:connected
+```
+
+This starts **Metro Network** at **http://localhost:8010**, TwinOps at **http://localhost:5173/connections**,
+and its API at port 8000. The first run builds and deploys the existing 18-container lab; subsequent
+runs reuse it. The Python environment and frontend requirements below still apply.
+The router image now pins FRR 10.5.5; the older 9.1.3 image crashed during startup on this Apple Silicon lab.
+
+1. Wait for Metro Network to show live service measurements.
+2. Introduce a routing, DNS, certificate, or unsupported link-flap fault there.
+3. TwinOps polls the application's API every five seconds and automatically creates an investigation.
+4. Open the investigation from either app. TwinOps reads the live network over HTTP and tests fixes
+   on the separate Containerlab twin. No fault label is sent to the planner.
+5. Review and approve a passing candidate in TwinOps. Its apply gateway calls Metro Network's API;
+   Metro Network changes the real lab devices. Fresh probes verify recovery in both screens.
+6. Use **Reset completed scenario** in Metro Network before another exercise. Reset is blocked during
+   an investigation or uncertain recovery. Reject a pending approval first if you want to abandon it.
+
+Gemini can use a local key file without copying the credential into configuration:
+
+```dotenv
+GEMINI_API_KEY_FILE=google-key
+TWINOPS_LLM_PROVIDER=gemini
+TWINOPS_LLM_MODEL=gemini-3.1-flash-lite
+TWINOPS_LLM_TIMEOUT_S=60
+```
+
+Save these settings in `.env`; `google-key` is a plain key file at the repository root. Both are
+git-ignored and excluded from the Docker build context. Explicit key environment variables take
+precedence. Gemini 3 uses low thinking effort; the existing budget setting continues to apply to
+Gemini 2 models. Model failures remain visible as runbook fallbacks.
+
+The connected launcher creates a shared connector secret for its two backend processes. It is never
+sent to either browser. The applications communicate over authenticated HTTP on loopback; the browser
+apps do not share state. The network app owns `prod`, while TwinOps owns `twin`. This is a local,
+single-operator prototype with one active issue, not an internet-facing multi-tenant connector.
+
+Network state, issue ownership and pending rollback snapshots are retained in `local-app/.data/`;
+TwinOps evidence is retained separately in `backend/.data/connected/`. An interrupted apply is blocked
+for operator recovery. A restarted TwinOps process expires unfinished investigations rather than
+reapplying old approvals. Retain both data directories when diagnosing an interrupted run; do not
+delete them to clear a recovery block. `npm run dev:stop` stops the apps and retains containers and
+evidence. The existing `python -m twinops.lab down` command removes only the TwinOps lab containers.
+
+If Docker reports an address overlap, choose unused IPv4 management subnets in `.env`, for example
+`TWINOPS_LAB_PROD_SUBNET=10.253.10.0/24` and `TWINOPS_LAB_TWIN_SUBNET=10.253.11.0/24`.
+The launcher refuses to redeploy a missing lab when saved network state exists. Restore the lab
+and inspect its state before continuing. Do not run the old standalone emulated demo against the
+same containers while the connected application is running.
+
+Metro Network's API documentation is at `/api/docs`. Connector endpoints are `GET /api/connector`,
+`GET /api/observation`, `GET /api/snapshot`, `GET /api/probes/{id}`, `POST /api/issues/{id}/claim`,
+`POST /api/issues/{id}/finish`, `POST /api/apply`, and `POST /api/restore`. Applies check the expected
+state hash under the device lock and reject changed targets or repeated different operations.
+Rollback uses the server's retained pre-change snapshot. `/api/faults` and `/api/reset` are local
+demo controls used by Metro Network, not tools exposed to the TwinOps planner.
+
+### Original self-contained demo
+
 Requires Python 3.12+, Node 23.6+ and, for the lab only, Docker.
 
 ```sh

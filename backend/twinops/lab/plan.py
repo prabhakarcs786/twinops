@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from ipaddress import ip_network
 
 INSTANCES = ("prod", "twin")
 MGMT_SUBNETS = {"prod": ("172.30.10.0/24", "3fff:172:30:10::/64"), "twin": ("172.30.11.0/24", "3fff:172:30:11::/64")}
+
+
+def management_subnets(instance: str) -> tuple[str, str]:
+    v4, v6 = MGMT_SUBNETS[instance]
+    subnet = os.environ.get(f'TWINOPS_LAB_{instance.upper()}_SUBNET', v4)
+    network = ip_network(subnet)
+    if network.version != 4 or network.prefixlen > 27:
+        raise ValueError('Lab management subnet must be IPv4 with at least 32 addresses')
+    return str(network), v6
 
 IMAGES = {"frr": "twinops/frr-node:0.1", "dns": "twinops/dns:0.1", "web": "twinops/web:0.1"}
 

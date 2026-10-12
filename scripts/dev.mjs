@@ -3,21 +3,34 @@
 // if a port is held by anything else, the script stops and tells you instead of killing it.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WIN = process.platform === 'win32';
 const OURS = /twinops|uvicorn|vite/i;
 
-const dotenvPort = (() => {
-  const file = join(ROOT, '.env');
-  const match = existsSync(file) && readFileSync(file, 'utf8').match(/^\s*(?:export\s+)?PORT\s*=\s*["']?(\d+)/m);
-  return match ? match[1] : undefined;
+const dotenv = (() => {
+  const file = process.env.TWINOPS_ENV_FILE || join(ROOT, '.env');
+  if (!existsSync(file)) return {};
+  const values = {};
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = line.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match) continue;
+    let value = match[2].trim();
+    if (value.length >= 2 && ['"', "'"].includes(value[0]) && value.at(-1) === value[0]) value = value.slice(1, -1);
+    else value = value.split(' #')[0].trim();
+    if (value) values[match[1]] = value;
+  }
+  return values;
 })();
-const API_PORT = Number(process.env.PORT || dotenvPort || 8000);
-const WEB_PORT = Number(process.env.TWINOPS_WEB_PORT || 5173);
+const setting = (key, fallback) => process.env[key] || dotenv[key] || fallback;
+const API_PORT = Number(setting('PORT', 8000));
+const WEB_PORT = Number(setting('TWINOPS_WEB_PORT', 5173));
+const NETWORK_PORT = Number(setting('TWINOPS_NETWORK_PORT', 8010));
+const CONNECTED = process.argv.includes('--connected');
 const API_URL = `http://127.0.0.1:${API_PORT}`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -84,6 +97,7 @@ async function freePort(port, label) {
 
 await freePort(API_PORT, 'backend');
 await freePort(WEB_PORT, 'frontend');
+if (CONNECTED || process.argv.includes('--stop')) await freePort(NETWORK_PORT, 'network application');
 if (process.argv.includes('--stop')) {
   console.log('✔ TwinOps dev servers stopped.');
   process.exit(0);
@@ -144,10 +158,47 @@ async function shutdown(code = 0) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-start('api', '36', python, ['-m', 'twinops'], {
+const sharedEnv = {
   PYTHONPATH: [join(ROOT, 'backend'), process.env.PYTHONPATH].filter(Boolean).join(WIN ? ';' : ':'),
   PYTHONUNBUFFERED: '1',
-  TWINOPS_RELOAD: '1',
+};
+const connectionEnv = CONNECTED ? {
+  TWINOPS_NETWORK_URL: `http://127.0.0.1:${NETWORK_PORT}`,
+  TWINOPS_NETWORK_TOKEN: process.env.TWINOPS_NETWORK_TOKEN || randomBytes(32).toString('hex'),
+  TWINOPS_TWIN: 'emulated',
+  TWINOPS_HARNESS: 'false',
+  TWINOPS_DATA_DIR: join(ROOT, 'backend', '.data', 'connected'),
+} : {};
+
+if (CONNECTED) {
+  // Reuse a deployed lab. Never reconfigure existing containers on a normal restart.
+  const status = spawnSync(python, ['-m', 'twinops.lab', 'status'], { cwd: ROOT, env: { ...process.env, ...sharedEnv }, encoding: 'utf8' });
+  let ready = false;
+  try { ready = JSON.parse(status.stdout).ready; } catch { /* show setup failure below */ }
+  if (!ready) {
+    if (existsSync(resolve(ROOT, setting('TWINOPS_NETWORK_DATA', 'local-app/.data/state.json')))) {
+      console.error('✖ Saved network state exists but the lab is unavailable. Start Docker / restore the lab before restarting; retained evidence will not be reset.');
+      process.exit(1);
+    }
+    console.log('• Preparing the real network lab (first run builds images and starts 18 containers)…');
+    for (const command of ['build', 'up']) {
+      const result = await new Promise((resolve) => {
+        const child = spawn(python, ['-m', 'twinops.lab', command], { cwd: ROOT, env: { ...process.env, ...sharedEnv }, stdio: 'inherit', detached: !WIN });
+        children.push(child);
+        child.on('exit', resolve);
+        child.on('error', () => resolve(1));
+      });
+      if (result !== 0) { console.error('✖ Lab setup failed. Check that Docker Desktop is running.'); await shutdown(1); }
+    }
+  }
+  start('net', '32', python, ['-m', 'twinops.network_app'], { ...sharedEnv, ...connectionEnv, TWINOPS_NETWORK_PORT: String(NETWORK_PORT), TWINOPS_UI_URL: `http://localhost:${WEB_PORT}` });
+}
+
+start('api', '36', python, ['-m', 'twinops'], {
+  ...connectionEnv,
+  PYTHONPATH: [join(ROOT, 'backend'), process.env.PYTHONPATH].filter(Boolean).join(WIN ? ';' : ':'),
+  PYTHONUNBUFFERED: '1',
+  TWINOPS_RELOAD: CONNECTED ? '0' : '1',
   HOST: '127.0.0.1',
   PORT: String(API_PORT),
 });
@@ -157,6 +208,7 @@ for (let i = 0; i < 60 && !stopping; i++) {
   try {
     if ((await fetch(`${API_URL}/api/health`)).ok) {
       console.log(`\n\x1b[32m✔ TwinOps dev is up\x1b[0m  UI http://localhost:${WEB_PORT}   API ${API_URL}   (Ctrl+C stops both, npm run dev again restarts)\n`);
+      if (CONNECTED) console.log(`  Network dashboard http://localhost:${NETWORK_PORT}\n  Connected applications http://localhost:${WEB_PORT}/connections\n  Lab probes warm up in the background. Ctrl+C stops the apps; lab containers and evidence are retained.\n`);
       break;
     }
   } catch {

@@ -16,6 +16,7 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
     failing = [p for p in run["observation"]["probes"] if p["kind"] == "journey" and not p["ok"]]
     return {
         "incident_id": run["runId"],
+        "source": run.get("source", {"kind": "demo_harness"}),
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "verdict": VERDICT_LABEL[run["verdict"]],
         "scope_note": "Verified under tested scenarios only. Twin evidence is not a guarantee of production safety.",

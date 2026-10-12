@@ -55,6 +55,8 @@ class Settings:
     google_project: str | None = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_PROJECT"))
     google_location: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_LOCATION", "europe-west1"))
     twin: str = field(default_factory=lambda: os.environ.get("TWINOPS_TWIN", "model"))
+    network_url: str | None = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_URL") or None)
+    network_token: str = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_TOKEN", ""))
     lab_dir: Path = field(default_factory=lambda: Path(os.environ.get("TWINOPS_LAB_DIR", Path(__file__).resolve().parents[2] / "lab")))
     harness_enabled: bool = field(default_factory=lambda: _bool("TWINOPS_HARNESS", True))
     data_dir: Path = field(default_factory=lambda: Path(os.environ.get("TWINOPS_DATA_DIR", Path(__file__).resolve().parents[1] / ".data")))
@@ -65,7 +67,11 @@ class Settings:
 
     @property
     def gemini_api_key(self) -> str | None:
-        return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        if key:
+            return key
+        path = os.environ.get("GEMINI_API_KEY_FILE")
+        return (REPO_ROOT / path).read_text(encoding="utf-8").strip() if path else None
 
     @property
     def openai_api_key(self) -> str | None:
