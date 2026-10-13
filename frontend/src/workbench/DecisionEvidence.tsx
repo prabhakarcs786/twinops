@@ -41,14 +41,16 @@ export function ImpactSummary({ frame, view, ready, target = DEMO_TARGET }: { fr
   const journeys = Object.values(frame.prod.probes);
   const affected = journeys.filter((p) => !p.ok);
   const selected = ready ? view?.run.selected : null;
+  const verdict = ready ? view?.run.verdict : undefined;
+  const noFix = !selected && (verdict === 'ESCALATE' || verdict === 'INCONCLUSIVE');
   const original = view?.run.observation.probes.filter((p) => p.kind === 'journey' && !p.ok) ?? affected;
   const restored = selected?.fixed.filter((p) => p.kind === 'journey' && p.ok && original.some((o) => o.id === p.id)).length ?? 0;
   return (
     <section className="impact-summary" aria-label="Service impact">
       <div><span className="stage-kicker">{target.impact}</span><strong>{affected.length} of {journeys.length} journeys failing</strong>
         <span>{affected.length ? affected.map((p) => p.label).join(' · ') : frame.prod.status === 'restored' ? `Recovery measured on ${target.prose}` : 'All observed journeys reachable'}</span></div>
-      <div><span className="stage-kicker">Tested recovery</span><strong>{selected ? `${restored} of ${original.length} affected journeys verified in twin` : 'Waiting for verified evidence'}</strong>
-        <span>{selected ? `${selected.touched.length} device${selected.touched.length === 1 ? '' : 's'} changed · ${selected.challenges.length} challenges · rollback ${selected.rollback.matches ? 'rehearsed' : 'unverified'}` : 'A recommendation appears only after the defined checks.'}</span></div>
+      <div><span className="stage-kicker">Tested recovery</span><strong>{selected ? `${restored} of ${original.length} affected journeys verified in twin` : noFix ? 'No fix passed every check' : 'Waiting for verified evidence'}</strong>
+        <span>{selected ? `${selected.touched.length} device${selected.touched.length === 1 ? '' : 's'} changed · ${selected.challenges.length} challenges · rollback ${selected.rollback.matches ? 'rehearsed' : 'unverified'}` : verdict === 'ESCALATE' ? 'Handed to on-call with the evidence. Nothing was changed on the network.' : verdict === 'INCONCLUSIVE' ? 'No verdict could be established. Nothing was changed on the network.' : 'A recommendation appears only after the defined checks.'}</span></div>
       {selected && restored < original.length && <p className="coverage-note">{original.length - restored} affected journeys are outside the tested slice. Recovery there is not established by this evidence.</p>}
     </section>
   );

@@ -45,7 +45,9 @@ The router image now pins FRR 10.5.5; the older 9.1.3 image crashed during start
    Metro Network changes the real lab devices. Fresh probes verify recovery in both screens.
 6. After a verified recovery, choose the next fault directly: Metro Network moves the scenario to Recent issues
    and restores the healthy baseline before injecting. A scenario that ended without recovery needs **Reset scenario**.
-   Reset is blocked during an investigation or uncertain recovery. Reject a pending approval first if you want to abandon it.
+   Reset is blocked during an investigation. Reject a pending approval first if you want to abandon it.
+   If a lab write did not finish, Metro Network shows why and offers **Operator recovery**, which re-pushes the
+   healthy baseline and only clears the block after live probes verify it.
 
 Gemini can use a local key file without copying the credential into configuration:
 
@@ -76,7 +78,9 @@ evidence. The existing `python -m twinops.lab down` command removes only the Twi
 If Docker reports an address overlap, choose unused IPv4 management subnets in `.env`, for example
 `TWINOPS_LAB_PROD_SUBNET=10.253.10.0/24` and `TWINOPS_LAB_TWIN_SUBNET=10.253.11.0/24`.
 The launcher refuses to redeploy a missing lab when saved network state exists. Restore the lab
-and inspect its state before continuing. Do not run the old standalone emulated demo against the
+and inspect its state before continuing. If Docker restarted the containers (their network links are lost),
+the launcher re-deploys the links automatically and keeps the saved evidence; Metro Network and TwinOps
+report the lab as unavailable instead of investigating a fake outage. Do not run the old standalone emulated demo against the
 same containers while the connected application is running.
 
 Metro Network's API documentation is at `/api/docs`. Connector endpoints are `GET /api/connector`,

@@ -128,10 +128,12 @@ function start(name, color, cmd, args, env) {
   });
   const tag = `\x1b[${color}m${name.padEnd(4)}\x1b[0m│ `;
   for (const stream of [child.stdout, child.stderr]) createInterface({ input: stream }).on('line', (line) => console.log(tag + line));
-  child.on('exit', (code) => {
+  child.on('exit', (code, signal) => {
     if (stopping) return;
-    console.error(`${tag}${code === 0 ? 'stopped (another npm run dev or dev:stop took over)' : `exited with code ${code ?? 'signal'}`}; stopping the other server.`);
-    shutdown(code ?? 1);
+    // Another launcher or dev:stop ends our servers with SIGTERM: a clean handover, not a crash.
+    const replaced = code === 0 || signal === 'SIGTERM';
+    console.error(`${tag}${replaced ? 'stopped (another npm run dev or dev:stop took over)' : `exited with ${code ?? signal}`}; stopping the other server.`);
+    shutdown(replaced ? 0 : code ?? 1);
   });
   children.push(child);
 }
@@ -173,15 +175,17 @@ const connectionEnv = CONNECTED ? {
 if (CONNECTED) {
   // Reuse a deployed lab. Never reconfigure existing containers on a normal restart.
   const status = spawnSync(python, ['-m', 'twinops.lab', 'status'], { cwd: ROOT, env: { ...process.env, ...sharedEnv }, encoding: 'utf8' });
-  let ready = false;
-  try { ready = JSON.parse(status.stdout).ready; } catch { /* show setup failure below */ }
-  if (!ready) {
-    if (existsSync(resolve(ROOT, setting('TWINOPS_NETWORK_DATA', 'local-app/.data/state.json')))) {
+  let lab = { ready: false };
+  try { lab = JSON.parse(status.stdout); } catch { /* show setup failure below */ }
+  if (!lab.ready) {
+    // Links lost after a Docker restart: device state is already gone, so re-deploying loses nothing. Saved evidence is kept.
+    const repair = Boolean(lab.linksLost?.length);
+    if (repair) console.log(`• ${lab.detail}\n• Re-deploying the lab links; saved evidence in local-app/.data and backend/.data is kept.`);
+    else if (existsSync(resolve(ROOT, setting('TWINOPS_NETWORK_DATA', 'local-app/.data/state.json')))) {
       console.error('✖ Saved network state exists but the lab is unavailable. Start Docker / restore the lab before restarting; retained evidence will not be reset.');
       process.exit(1);
-    }
-    console.log('• Preparing the real network lab (first run builds images and starts 18 containers)…');
-    for (const command of ['build', 'up']) {
+    } else console.log('• Preparing the real network lab (first run builds images and starts 18 containers)…');
+    for (const command of repair ? ['up'] : ['build', 'up']) {
       const result = await new Promise((resolve) => {
         const child = spawn(python, ['-m', 'twinops.lab', command], { cwd: ROOT, env: { ...process.env, ...sharedEnv }, stdio: 'inherit', detached: !WIN });
         children.push(child);

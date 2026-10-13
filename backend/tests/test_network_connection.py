@@ -8,6 +8,7 @@ import httpx
 from twinops.catalogue import apply_change_set, change_set
 from twinops.config import Settings
 from twinops.lab.backend import LabDemoNetwork, stable_hash
+from twinops.lab.runner import LabError, Result
 from twinops.model import fixed_suite, modelled_alarms, probe_journey
 from twinops.network_app import NetworkState, create_network_app
 from twinops.network_connector import NetworkMonitor
@@ -123,6 +124,32 @@ def test_atomic_drift_check_idempotency_and_rollback(tmp_path):
     asyncio.run(run())
 
 
+def test_referee_evidence_is_withheld_from_twinops_and_revealed_after_close(tmp_path):
+    async def run():
+        _, _, state, client = fixture(tmp_path)
+        async with client:
+            body = await prepare_apply(state, client)
+            assert 'proof' not in (await client.get('/api/connector')).json()
+            proof = (await client.get('/api/dashboard')).json()['proof']
+            assert proof['sealed'] and proof['fault'] is None
+            before, during = proof['before']['facts'], proof['during']['facts']
+            assert {k for k, fact in during.items() if before.get(k) != fact} == {'DNS-1 answer for svc.demo', 'DNS-1 cached answer for svc.demo'}
+            assert all(j['ok'] for j in proof['before']['journeys']) and not all(j['ok'] for j in proof['during']['journeys'])
+            assert (await client.post('/api/apply', json=body)).status_code == 200
+            await state.refresh()
+            finish = {'incidentId': body['incidentId'], 'status': 'finished'}
+            assert (await client.post(f"/api/issues/{body['issueId']}/finish", json=finish)).status_code == 200
+            proof = (await client.get('/api/dashboard')).json()['proof']
+            assert not proof['sealed'] and proof['fault']['id'] == 'dns_failure'
+            assert all(j['ok'] for j in proof['after']['journeys'])
+            assert {k: f['value'] for k, f in proof['after']['facts'].items()} == {k: f['value'] for k, f in before.items()}
+            assert [s['target'] for s in proof['applied']['steps']] == ['DNS-1', 'DNS-1']
+            assert [e['actor'] for e in proof['timeline']] == ['You (exercise panel)', 'Metro monitoring', 'TwinOps', 'Apply gateway', 'Metro monitoring', 'TwinOps']
+            assert [w['actor'] for w in proof['writes']] == ['harness', 'apply_gateway']
+            assert 'approvalToken' not in proof['writes'][1]
+    asyncio.run(run())
+
+
 def test_recovered_scenario_is_replaced_by_the_next_fault(tmp_path, monkeypatch):
     async def run():
         _, _, state, client = fixture(tmp_path)
@@ -169,6 +196,7 @@ def test_external_monitor_deduplicates_and_applies_over_api(tmp_path, monkeypatc
     async def run():
         settings, network, state, client = fixture(tmp_path)
         monkeypatch.setattr('twinops.lab.backend.EmulatedTwin', lambda _: ModelTwin())
+        monkeypatch.setattr('twinops.network_connector.twin_status', AsyncMock(return_value={'ready': True, 'detail': 'test twin'}))
         await state.refresh()
         await client.post('/api/faults', json={'fault':'route_misconfig'})
         registry = Registry(settings)
@@ -232,6 +260,7 @@ def test_saved_incident_is_not_reinvestigated_after_restart(tmp_path, monkeypatc
     async def run():
         settings, _, state, client = fixture(tmp_path)
         monkeypatch.setattr('twinops.lab.backend.EmulatedTwin', lambda _: ModelTwin())
+        monkeypatch.setattr('twinops.network_connector.twin_status', AsyncMock(return_value={'ready': True, 'detail': 'test twin'}))
         await state.refresh()
         await client.post('/api/faults', json={'fault':'route_misconfig'})
         registry = Registry(settings)
@@ -257,3 +286,92 @@ def test_management_subnet_can_avoid_existing_docker_networks(monkeypatch):
     from twinops.lab.plan import management_subnets
     monkeypatch.setenv('TWINOPS_LAB_PROD_SUBNET', '10.253.10.0/24')
     assert management_subnets('prod')[0] == '10.253.10.0/24'
+
+
+def test_failed_reset_is_reported_and_operator_recovery_restores_once(tmp_path, monkeypatch):
+    async def run():
+        _, _, state, client = fixture(tmp_path)
+        attempts = []
+
+        class FlakyDouble(DeviceDouble):
+            async def prepare(self):
+                attempts.append(1)
+                if len(attempts) == 1:
+                    raise LabError('demo network not healthy after reset: J1 no answer')
+
+        monkeypatch.setattr('twinops.network_app.LabDemoNetwork', lambda *_: FlakyDouble())
+        async with client:
+            await state.refresh()
+            await client.post('/api/faults', json={'fault': 'dns_failure'})
+            failed = await client.post('/api/reset', json={})
+            assert failed.status_code == 503 and 'not healthy' in failed.json()['detail']
+            assert state.recovery and 'baseline' in state.recovery_reason and state.history == []
+            assert (await client.get('/api/dashboard')).json()['recoveryReason'] == state.recovery_reason
+            assert (await client.post('/api/reset', json={})).status_code == 409
+            assert (await client.post('/api/faults', json={'fault': 'cert_expiry'})).status_code == 409
+            recovered = await client.post('/api/reset', json={'operatorRecovery': True})
+            assert recovered.status_code == 200, recovered.text
+            assert not state.recovery and state.recovery_reason is None and state.issue is None
+            assert [h['status'] for h in state.history] == ['reset']
+            assert (await client.post('/api/faults', json={'fault': 'cert_expiry'})).status_code == 200
+    asyncio.run(run())
+
+
+def test_monitor_waits_for_a_working_twin(tmp_path, monkeypatch):
+    async def run():
+        settings, _, state, client = fixture(tmp_path)
+        monkeypatch.setattr('twinops.network_connector.twin_status', AsyncMock(return_value={'ready': False, 'detail': 'lab network links lost in twin'}))
+        await state.refresh()
+        await client.post('/api/faults', json={'fault': 'dns_failure'})
+        registry = Registry(settings)
+        monitor = NetworkMonitor(registry)
+        await monitor.client.client.aclose()
+        monitor.client.client = client
+        try:
+            await monitor.tick()
+            assert not registry.incidents and state.issue.get('incidentId') is None
+            assert 'twin lab is unavailable' in monitor.status['detail']
+        finally:
+            await registry.shutdown()
+            await monitor.close()
+    asyncio.run(run())
+
+
+def test_lab_status_detects_links_lost_after_a_docker_restart(monkeypatch):
+    from twinops.lab import backend
+
+    class Runner:
+        async def inspect_states(self, prefix):
+            return {f'clab-twinops-{i}-{n}': 'running' for i in ('prod', 'twin') for n in ('b17', 'gw1', 'svc1', 'dns1', 'dns2', 'p0', 'p1', 'p2', 'p3')}
+
+        async def exec(self, name, argv, timeout=10):
+            links = '' if name.endswith('prod-b17') else ''.join(f'{n + 1}: eth{n}@if9: <UP> mtu 1500\n' for n in range(1, 9))
+            return Result(0, '1: lo: <LOOPBACK,UP> mtu 65536\n' + links, '')
+
+    monkeypatch.setattr(backend, 'DockerRunner', Runner)
+    lost = asyncio.run(backend.lab_status(Settings(), ('prod',)))
+    assert not lost['ready'] and lost['linksLost'] == ['prod'] and 'twinops.lab up' in lost['detail']
+    assert asyncio.run(backend.lab_status(Settings(), ('twin',)))['ready']
+
+
+def test_in_flight_fault_shows_progress_not_recovery(tmp_path):
+    async def run():
+        _, network, state, client = fixture(tmp_path)
+        seen = {}
+        inject = network.inject_fault
+
+        async def observed_inject(fault):
+            seen['public'], seen['connector'] = state.dashboard(), state.dashboard(public=False)
+            await inject(fault)
+
+        network.inject_fault = observed_inject
+        async with client:
+            await state.refresh()
+            assert (await client.post('/api/faults', json={'fault': 'dns_failure'})).status_code == 200
+        assert seen['public']['activity']['text'] == 'Introducing the fault on the live devices'
+        assert not seen['public']['recoveryRequired'] and seen['public']['recoveryReason'] is None
+        # TwinOps still sees the raw quarantine and will not claim the issue mid-write.
+        assert seen['connector']['recoveryRequired']
+        assert state.dashboard()['activity'] is None and not state.recovery
+        assert [p['failure'] for p in state.dashboard()['proof']['during']['journeys'] if not p['ok']]
+    asyncio.run(run())

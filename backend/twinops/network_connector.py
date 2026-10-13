@@ -14,6 +14,12 @@ from .config import Settings
 log = logging.getLogger('twinops.connector')
 
 
+async def twin_status(settings: Settings) -> dict[str, Any]:
+    from .lab.backend import lab_status
+
+    return await lab_status(settings, ('twin',))
+
+
 class NetworkClient:
     def __init__(self, settings: Settings):
         url = settings.network_url or ''
@@ -95,7 +101,8 @@ class NetworkMonitor:
         issue = remote.get('issue')
         probes = (remote.get('observation') or {}).get('probes', [])
         self.status.update(connected=True, ready=remote['ready'], detail=remote.get('error') or 'Automatic detection active · checked every 5 seconds',
-                           url=self.registry.settings.network_url, checkedAt=remote.get('checkedAt'), recoveryRequired=remote['recoveryRequired'],
+                           url=self.registry.settings.network_url, checkedAt=remote.get('checkedAt'),
+                           recoveryRequired=remote['recoveryRequired'] and not remote.get('activity'),
                            operation=remote.get('operation'),
                            journeys=[{'id': p['id'], 'label': p['label'], 'ok': p['ok']} for p in probes if p.get('kind') == 'journey'],
                            issues=([issue] if issue else []) + list(reversed(remote.get('history', []))))
@@ -114,6 +121,11 @@ class NetworkMonitor:
             self.status['detail'] = 'Issue already assigned; retained investigation evidence is required'
             return
         if self.registry._lab_lock.locked():
+            return
+        # A twin without its links fails every experiment and would escalate a fixable issue.
+        twin = await twin_status(self.registry.settings)
+        if not twin['ready']:
+            self.status['detail'] = f"Not investigating yet: the twin lab is unavailable ({twin['detail']})"
             return
         await self.registry.create_external(self.client, issue, remote['topology'], iid)
 

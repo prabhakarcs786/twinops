@@ -17,7 +17,7 @@ const PHASES: { id: Phase; label: string }[] = [
   { id: 'apply', label: 'Apply (lab)' },
 ];
 
-export function PhaseStepper({ seen, current }: { seen: Set<Phase>; current: Phase }) {
+export function PhaseStepper({ seen, current, escalated = false }: { seen: Set<Phase>; current: Phase; escalated?: boolean }) {
   return (
     <ol className="stepper" aria-label="Incident pipeline">
       {PHASES.map((p, i) => {
@@ -25,7 +25,7 @@ export function PhaseStepper({ seen, current }: { seen: Set<Phase>; current: Pha
         return (
           <li key={p.id} className={`step is-${state}`} aria-current={state === 'active' ? 'step' : undefined}>
             <span className="step-dot">{i + 1}</span>
-            <span className="step-label">{p.label}</span>
+            <span className="step-label">{escalated && p.id === 'approve' ? 'Escalated to on-call' : p.label}</span>
           </li>
         );
       })}

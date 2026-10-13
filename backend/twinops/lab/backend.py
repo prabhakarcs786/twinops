@@ -251,17 +251,37 @@ class EmulatedTwin:
         await self.inst.set_paused(set())
 
 
-async def lab_status(settings: Settings) -> dict[str, Any]:
+async def lab_status(settings: Settings, instances: tuple[str, ...] = INSTANCES) -> dict[str, Any]:
+    from .render import topology
+
     runner = DockerRunner()
-    expected = {container(i, n) for i in INSTANCES for n in ("b17", "gw1", "svc1", "dns1", "dns2", *(p.container for p in POPS))}
+    expected = {container(i, n) for i in instances for n in ("b17", "gw1", "svc1", "dns1", "dns2", *(p.container for p in POPS))}
     try:
         states = await runner.inspect_states("clab-twinops-")
     except FileNotFoundError:
         return {"backend": "emulated", "ready": False, "detail": "docker CLI not available"}
     running = {n for n, s in states.items() if s in ("running", "paused")}
     missing = sorted(expected - running)
-    return {"backend": "emulated", "ready": not missing,
-            "detail": "Containerlab: 2 isolated instances × 9 containers (FRR, CoreDNS, nginx)" if not missing else f"lab not deployed: missing {', '.join(missing[:4])}…"}
+    if missing:
+        return {"backend": "emulated", "ready": False, "detail": f"lab not deployed: missing {', '.join(missing[:4])}…"}
+    # Docker restarts containers without their Containerlab veth links; b17 and gw1 terminate every link.
+    lost = []
+    for instance in instances:
+        wanted: dict[str, set[str]] = {}
+        for link in topology(instance)["topology"]["links"]:
+            for endpoint in link["endpoints"]:
+                node, iface = endpoint.split(":")
+                wanted.setdefault(node, set()).add(iface)
+        for node in ("b17", "gw1"):
+            res = await runner.exec(container(instance, node), ["ip", "-o", "link", "show"], timeout=8)
+            have = {line.split(":")[1].strip().split("@")[0] for line in res.out.splitlines() if line.count(":") >= 2}
+            if res.rc != 0 or not wanted[node] <= have:
+                lost.append(instance)
+                break
+    if lost:
+        return {"backend": "emulated", "ready": False, "linksLost": lost,
+                "detail": f"lab network links lost in {', '.join(lost)} (Docker restarted the containers). Run `python -m twinops.lab up` or restart `npm run dev:connected` to re-deploy"}
+    return {"backend": "emulated", "ready": True, "detail": "Containerlab: 2 isolated instances × 9 containers (FRR, CoreDNS, nginx)"}
 
 
 async def lab_backends(settings: Settings, topo: Topology, seed: int) -> tuple[LabDemoNetwork, EmulatedTwin]:

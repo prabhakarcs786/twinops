@@ -509,7 +509,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
         <ImpactSummary frame={frame} view={view} ready={verdictVisible} target={target} />
         <div className="wb-grid">
             <div className="wb-metrics">
-              <PhaseStepper seen={seen} current={frame.phase} />
+              <PhaseStepper seen={seen} current={frame.phase} escalated={verdict === 'ESCALATE'} />
               <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} target={target} />
             </div>
             <section className={`verdict-card ${verdict ? `v-${verdict.toLowerCase()}` : failedEvent ? 'v-inconclusive' : hasRun || starting ? 'v-running' : 'v-idle'}`} aria-labelledby="verdict-title">
