@@ -1,6 +1,6 @@
-import { ArrowUpRight, Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
+import { Bot, Eye, EyeOff, FastForward, GitPullRequestArrow, MessageSquareText, RotateCcw, Settings2, ShieldCheck, Siren, TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
-import { createIncident as createLiveIncident, fetchConfig, getActiveInvestigation, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident, type StreamState } from '../api/live.ts';
+import { createIncident as createLiveIncident, fetchConfig, getIncident, getReveal, postDecision, postDrift, subscribe, type BackendConfig, type LiveIncident, type StreamState } from '../api/live.ts';
 import { SiteHeader } from '../components/SiteHeader.tsx';
 import { StatusChip } from '../components/StatusChip.tsx';
 import { FAULT_INFO, SUPPORTED_FAULTS } from '../engine/harness.ts';
@@ -15,6 +15,10 @@ import { CandidateComparison, EvidenceReplay, ImpactSummary } from './DecisionEv
 import { IncidentHistory } from './IncidentHistory.tsx';
 import { BenchmarkPanel } from './BenchmarkPanel.tsx';
 import { ReviewMetrics } from './ReviewTrial.tsx';
+import { DecisionReview } from './DecisionReview.tsx';
+import { ConnectedApplication, ConnectedApplicationContext } from './ConnectedApplication.tsx';
+import { WorkbenchLoading } from './WorkbenchLoading.tsx';
+import { useConnection } from './useConnection.ts';
 import { Evidence, type AskTarget, type EvidenceTab } from './Evidence.tsx';
 import { CandidateBoard, Counters, PhaseStepper, Stage, Timeline } from './panels.tsx';
 import { CONNECTED_TARGET, DEMO_TARGET, liveView, localView, type RunView } from './runView.ts';
@@ -22,7 +26,7 @@ import { fmtClock, usePlayback } from './usePlayback.ts';
 
 const SPEEDS = [0.5, 1, 2, 4];
 const shortId = (id: string) => (id.length > 20 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id);
-const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed', 'recovery_required']);
+const ANNOUNCE = new Set(['fault_injected', 'model_call', 'reproduced', 'not_reproduced', 'gate_verdict', 'awaiting_approval', 'escalated', 'apply_progress', 'post_check', 'drift_detected', 'rolled_back', 'approval_rejected', 'run_failed', 'recovery_required']);
 const OUTCOME_KINDS = new Set(['post_check', 'rolled_back', 'drift_detected', 'approval_rejected', 'recovery_required']);
 
 function readParams() {
@@ -32,7 +36,7 @@ function readParams() {
     speed: p.get('speed') === 'instant' ? Infinity : SPEEDS.includes(Number(p.get('speed'))) ? Number(p.get('speed')) : 1,
     fault: fault && fault in FAULT_INFO ? fault : 'random',
     autostart: p.get('autostart') === '1',
-    pack: (p.get('pack') === 'enterprise' ? 'enterprise' : 'core') as PackId,
+    pack: (p.get('pack') === 'branch' ? 'branch' : p.get('pack') === 'enterprise' ? 'enterprise' : 'core') as PackId,
     engine: p.get('incident') ? 'live' : p.get('engine') === 'local' ? 'local' : 'live',
     incident: p.get('incident'),
     presentation: p.get('view') === 'presentation',
@@ -84,8 +88,10 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const [backend, setBackend] = useState<BackendConfig | null | undefined>(params.engine === 'local' ? null : undefined);
   const [enginePref, setEnginePref] = useState<'live' | 'local'>(params.engine);
   const [incident, setIncident] = useState<Incident | null>(null);
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState(Boolean(params.incident));
   const [presentation, setPresentation] = useState(params.presentation);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [challengeSettingsOpen, setChallengeSettingsOpen] = useState(false);
   const [streamState, setStreamState] = useState<StreamState>('closed');
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [now, setNow] = useState(Date.now);
@@ -102,8 +108,14 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const [useMemory, setUseMemory] = useState(true);
   const [seedInput, setSeedInput] = useState('');
   const [drifted, setDrifted] = useState(false);
-  const topo = useMemo(() => buildTopology(pack), [pack]);
-  const engine: 'live' | 'local' = backend && enginePref === 'live' ? 'live' : 'local';
+  const [workspaceTab, setWorkspaceTab] = useState<'decision' | 'investigation'>('decision');
+  const [followExercise, setFollowExercise] = useState(false);
+  const watching = Boolean(backend?.connectedApplication || incident?.kind === 'live' && incident.detail?.run?.source?.kind === 'connected_application');
+  const { connection, error: connectionError, setConnection } = useConnection(watching);
+  const measured = Boolean(!connectionError && connection?.connected && connection.ready && connection.probes?.length);
+  const topo = useMemo(() => incident?.kind === 'live' && incident.detail?.run?.topology || (watching && connection?.topology) || buildTopology(pack), [pack, incident, watching, connection?.topology]);
+  // An incident retains its origin even when the current config request fails.
+  const engine: 'live' | 'local' = incident?.kind ?? (enginePref === 'live' && (backend || params.incident) ? 'live' : 'local');
 
   const local = incident?.kind === 'local' ? incident : null;
   const live = incident?.kind === 'live' ? incident : null;
@@ -115,7 +127,15 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const index = live ? events.length : playback.index;
   const visible = live ? events : events.slice(0, index);
   const current = visible.at(-1);
-  const frame = current?.frame ?? idleFrame(topo);
+  const baseline = idleFrame(topo);
+  if (watching || backend === undefined || starting || resumeError) {
+    baseline.prod = {
+      probes: measured ? Object.fromEntries(connection!.probes!.map((p) => [p.id, p])) : {},
+      alarmNodes: measured ? connection!.alarmNodes ?? [] : [],
+      status: measured && connection!.probes!.some((p) => !p.ok) ? 'incident' : 'healthy',
+    };
+  }
+  const frame = current?.frame ?? baseline;
   const seen = new Set<Phase>(visible.map((e) => e.phase));
   const verdictEvent = visible.find((e) => e.kind === 'gate_verdict');
   const failedEvent = live ? visible.find((e) => e.kind === 'run_failed') : undefined;
@@ -128,14 +148,22 @@ export function Workbench({ theme, onToggleTheme }: Props) {
       ? liveView(live.id, live.detail.run, live.detail.outcome, live.detail.approval, visible.some((e) => e.kind === 'narrative') ? live.detail.narrative : null)
       : null;
   const verdictVisible = Boolean(verdictEvent) && Boolean(view);
-  const liveOutcomeVisible = Boolean(live?.ended) || (current ? OUTCOME_KINDS.has(current.kind) : false);
+  const latestLifecycle = [...events].reverse().find((event) => event.lifecycle)?.lifecycle;
+  const detailLifecycle = live?.detail?.lifecycle;
+  const serverLifecycle = detailLifecycle && detailLifecycle.revision >= (latestLifecycle?.revision ?? 0) ? detailLifecycle : latestLifecycle;
+  const evidenceExpired = serverLifecycle && now / 1000 > serverLifecycle.evidenceExpiresAt;
+  const lifecycle = serverLifecycle && evidenceExpired ? { ...serverLifecycle, evidenceFresh: false, canApprove: false,
+    nextAction: 'Start a fresh investigation' } : serverLifecycle;
+  const liveOutcomeVisible = Boolean(live?.ended || live?.detail?.recovered) || (current ? OUTCOME_KINDS.has(current.kind) : false);
   const outcome = local ? (session?.outcome && playback.done ? session.outcome : undefined) : liveOutcomeVisible ? (live?.detail?.outcome ?? undefined) : undefined;
+  const applyStep = live && !outcome && current && ['approval_recorded', 'apply_progress', 'applied'].includes(current.kind) ? current : null;
   const decided = visible.some((e) => e.kind === 'approval_recorded' || e.kind === 'applied' || OUTCOME_KINDS.has(e.kind));
-  const awaiting = visible.some((e) => e.kind === 'awaiting_approval') && !decided && !view?.outcome && !outcome && !live?.detail?.recovered;
-  const running = local ? !playback.done : live ? !verdictEvent && !failedEvent && !live.ended : starting;
+  const awaiting = live && lifecycle ? lifecycle.canReject : visible.some((e) => e.kind === 'awaiting_approval') && !decided && !view?.outcome && !outcome && !live?.detail?.recovered;
+  const running = local ? !playback.done : live && lifecycle ? lifecycle.status === 'running' || lifecycle.status === 'applying' : live ? !verdictEvent && !failedEvent && !live.ended : starting;
+  const showInvestigation = !live || !verdictVisible || workspaceTab === 'investigation';
   const hasRun = Boolean(incident);
 
-  const ticking = Boolean(live && running);
+  const ticking = Boolean(live && (running || awaiting));
   useEffect(() => {
     if (!ticking) return;
     const timer = window.setInterval(() => setNow(Date.now()), 250);
@@ -158,6 +186,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     setDecisionError(null);
     setDialogOpen(false);
     setResumeError(null);
+    setWorkspaceTab('decision');
   };
 
   const resumeIncident = async (id: string) => {
@@ -169,8 +198,9 @@ export function Workbench({ theme, onToggleTheme }: Props) {
       const detail = await getIncident(id);
       setPack(detail.pack);
       setEnginePref('live');
+      // Render recorded evidence immediately; the stream deduplicates replayed events by sequence.
       setIncident({ kind: 'live', id, eventsUrl: `/api/incidents/${encodeURIComponent(id)}/events`, seed: detail.seed,
-        events: [], detail, ended: false, createdAt: detail.createdAt });
+        events: detail.run?.events ?? [], detail, ended: false, createdAt: detail.createdAt });
       rememberIncident(id);
     } catch (err) { setResumeError(`Could not resume this incident — ${errorText(err)}`); }
     finally { setStarting(false); }
@@ -183,28 +213,16 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   }, [params.incident, backend]);
 
   // Connected mode: TwinOps starts investigations itself, so this view follows them instead of waiting for a link.
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const watching = Boolean(backend?.connectedApplication);
+  const activeId = connection?.issues.find((issue) => issue.incidentId &&
+    (issue.investigationStatus === 'investigating' || issue.status === 'open' && !issue.investigationStatus))?.incidentId ?? null;
   const followActive = useEffectEvent((id: string) => {
-    if (!incident && !starting && !params.incident) void resumeIncident(id);
+    if (!incident && !starting && (!params.incident || followExercise)) void resumeIncident(id);
   });
   useEffect(() => {
-    if (!watching) return;
-    let stopped = false;
-    let timer: number;
-    const poll = async () => {
-      try {
-        const id = await getActiveInvestigation();
-        if (stopped) return;
-        setActiveId(id);
-        if (id) followActive(id);
-      } catch { /* keep the last known investigation */ }
-      if (!stopped) timer = window.setTimeout(() => void poll(), 3000);
-    };
-    void poll();
-    return () => { stopped = true; window.clearTimeout(timer); };
-  }, [watching]);
-
+    if (!watching || !activeId) return;
+    const timer = window.setTimeout(() => followActive(activeId), 0);
+    return () => window.clearTimeout(timer);
+  }, [watching, activeId]);
 
   // Probe for a backend once; without one the workbench runs the in-browser engine.
   useEffect(() => {
@@ -369,14 +387,19 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const verdict = verdictVisible ? view?.run.verdict : undefined;
   const runId = view?.run.runId ?? live?.id ?? session?.run.runId ?? '';
   const seed = live?.seed ?? session?.run.seed;
-  const twinLabel = backend?.twin.backend === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
-  const connected = Boolean(backend?.connectedApplication);
+  const twinLabel = (view?.run.versions.twin ?? backend?.twin.backend) === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
+  const connected = view?.run.source ? view.run.source.kind === 'connected_application' : Boolean(backend?.connectedApplication);
+  const connectedControls = connected || Boolean(backend?.connectedApplication);
   const resolving = backend === undefined;
+  const followingIncident = Boolean(!incident && !resumeError && activeId && (!params.incident || followExercise));
+  const loadingIncident = starting || followingIncident || Boolean(live && !current && !view && !live.ended);
+  const loadingWorkspace = resolving || loadingIncident || Boolean(!hasRun && watching && !connection && !connectionError);
   const target = connected ? CONNECTED_TARGET : DEMO_TARGET;
-  const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth);
+  const canInvestigate = engine === 'local' || Boolean(backend && (!backend.authenticationRequired || backend.role === 'investigator' || backend.role === 'approver'));
+  const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth && (!backend.authenticationRequired || backend.role === 'approver'));
   const thinking = current?.kind === 'model_call' ? current : undefined;
   const activePlanner = view?.run.planner ?? backend?.planner;
-  const ask: AskTarget | null = live && !live.detail?.recovered && activePlanner?.kind === 'llm' && activePlanner.provider !== 'simulated-outage'
+  const ask: AskTarget | null = canInvestigate && live && !live.detail?.recovered && activePlanner?.kind === 'llm' && activePlanner.provider !== 'simulated-outage'
     ? { incidentId: live.id, model: activePlanner.model, ready: Boolean(view) } : null;
   const openAsk = () => {
     setEvidenceTab('ask');
@@ -387,47 +410,64 @@ export function Workbench({ theme, onToggleTheme }: Props) {
     <div className={`wb ${presentation ? 'is-presentation' : ''}`}>
       <SiteHeader variant="app" theme={theme} onToggleTheme={onToggleTheme} />
       <main id="main" className="wb-main" tabIndex={-1}>
-        <section className="wb-hero">
+        <header className="wb-heading">
           <div className="wb-title">
-            <p className="eyebrow">Live workbench</p>
-            <h1>
-              {resolving ? '' : connected ? 'Observe it. ' : 'Break it. '}<span className="grad-text">Watch TwinOps prove the fix.</span>
-            </h1>
-            <p className="mode-line" aria-busy={resolving}>
-              {resolving ? (
-                <StatusChip tone="pending">Checking connection…</StatusChip>
-              ) : engine === 'live' && backend ? (
-                <>
-                  <StatusChip tone="ok">Live backend</StatusChip>
-                  <span className="engine-detail">
-                    {activePlanner?.kind === 'llm' ? `${activePlanner.provider} · ${activePlanner.model}` : 'runbook planner'} · {twinLabel} · server-side Proof Gate
-                  </span>
-                </>
-              ) : (
-                <>
-                  <StatusChip tone="info">In-browser model twin</StatusChip>
-                  <span>{PLANNER_MODE} · synthetic data only · no production access</span>
-                </>
-              )}
-              {backend && !backend.connectedApplication && (
-                <span className="segmented" role="group" aria-label="Engine">
-                  <button type="button" aria-pressed={engine === 'live'} className={engine === 'live' ? 'is-on' : ''} onClick={() => changeEngine('live')} disabled={running}>
-                    Live
-                  </button>
-                  <button type="button" aria-pressed={engine === 'local'} className={engine === 'local' ? 'is-on' : ''} onClick={() => changeEngine('local')} disabled={running}>
-                    In-browser
-                  </button>
-                </span>
-              )}
-            </p>
+            <h1>{verdictVisible ? 'Incident review' : hasRun || loadingIncident ? 'Investigation' : 'Workbench'}</h1>
+            <div className="mode-line" aria-busy={resolving}>
+              {resolving ? <StatusChip tone="pending">Checking connection…</StatusChip>
+                : engine === 'live' ? <StatusChip tone={backend ? 'ok' : 'info'}>{live?.detail?.recovered ? 'Saved backend evidence' : backend ? 'Live backend' : 'Backend evidence'}</StatusChip>
+                : <StatusChip tone="info">In-browser model twin</StatusChip>}
+              {connected && <span>Metro Network</span>}
+              {!resolving && <details className="runtime-details">
+                <summary>Runtime details</summary>
+                <div className="runtime-content">
+                  <p>{engine === 'live'
+                    ? `${activePlanner?.kind === 'llm' ? `${activePlanner.provider} · ${activePlanner.model}` : 'Runbook planner'} · ${twinLabel} · server-side Proof Gate`
+                    : `${PLANNER_MODE} · synthetic data only · no production access`}</p>
+                  {engine === 'live' && !backend && <p>Current backend configuration is unavailable. The incident keeps its recorded source.</p>}
+                  {backend && !backend.connectedApplication && !connected && <div className="segmented" role="group" aria-label="Engine">
+                    <button type="button" aria-pressed={engine === 'live'} className={engine === 'live' ? 'is-on' : ''} onClick={() => changeEngine('live')} disabled={running}>Live</button>
+                    <button type="button" aria-pressed={engine === 'local'} className={engine === 'local' ? 'is-on' : ''} onClick={() => changeEngine('local')} disabled={running}>In-browser</button>
+                  </div>}
+                </div>
+              </details>}
+            </div>
           </div>
-
-          {resolving ? <div className="wb-controls wb-controls-loading" role="status" aria-live="polite"><span className="wb-skeleton" aria-hidden="true" /><p className="engine-detail">Checking whether TwinOps is connected to Metro Network…</p></div> : connected ? <div className="wb-controls"><div className="wb-control-links"><a className="btn btn-primary" href="/connections">Connected applications →</a>{backend?.networkUrl && <a className="btn btn-ghost" href={backend.networkUrl} target="_blank" rel="noreferrer">Open Metro Network <ArrowUpRight size={16} aria-hidden="true" /></a>}</div><p className="engine-detail">Incidents detected in Metro Network open here automatically. Live changes require your approval.</p></div> : <div className="wb-controls">
-            <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running}>
-              <span className="btn-break-glow" aria-hidden="true" />
-              <Zap size={22} aria-hidden="true" />
-              <span>{running ? 'Investigating…' : hasRun ? 'Break it again' : 'Break the network'}</span>
-            </button>
+          <div className="workbench-toolbar">
+            {!loadingWorkspace && !resumeError && !connectedControls && <>
+              <button type="button" className={`btn-break ${running ? 'is-running' : ''}`} onClick={() => void breakNetwork()} disabled={running || starting || !canInvestigate}>
+                <Zap size={16} aria-hidden="true" /><span>{running ? 'Investigating…' : hasRun ? 'Break it again' : 'Break the network'}</span>
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" aria-expanded={settingsOpen} aria-controls="scenario-settings" onClick={() => setSettingsOpen(!settingsOpen)}><Settings2 size={15} aria-hidden="true" />Scenario settings</button>
+            </>}
+            {(backend || live) && <IncidentHistory onResume={(id) => void resumeIncident(id)} disabled={running || starting} current={live?.id} />}
+            {hasRun && <button type="button" className="btn btn-ghost btn-sm" aria-pressed={presentation} onClick={() => setPresentation(!presentation)}>Presentation view</button>}
+            {!connected && hasRun && <>
+              {engine === 'local' && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={skip} disabled={!running}>
+                  <FastForward size={15} aria-hidden="true" /> Skip to review
+                </button>
+              )}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={resetAll} disabled={engine === 'live' && running}>
+                <RotateCcw size={15} aria-hidden="true" /> Reset
+              </button>
+            </>}
+          </div>
+          {live && <div className="workbench-status">
+            <span className="connection-state" role="status">{live.detail?.recovered ? 'Saved incident · retained for review' : live.ended ? 'Evidence synchronized' : streamState === 'connected' ? 'Live events connected' : streamState === 'reconnecting' ? 'Connection lost · reconnecting…' : 'Connecting to incident…'}</span>
+            {!live.detail?.recovered && !live.ended && ['closed', 'reconnecting'].includes(streamState) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStreamAttempt((n) => n + 1)}>Reconnect</button>}
+            {verdictVisible && backend?.harness && <a className="btn btn-ghost btn-sm" href={`/review?incident=${encodeURIComponent(live.id)}`} target="_blank" rel="noreferrer">Review trial (new tab)</a>}
+            {!loadingWorkspace && connectedControls && <ConnectedApplicationContext connection={connection} error={connectionError} networkUrl={backend?.networkUrl} />}
+            {connectedControls && !running && !awaiting && !activeId && <a className="workbench-home-link" href="/workbench">Back to workbench</a>}
+          </div>}
+        </header>
+        {resumeError && <div className="recovery-notice" role="alert"><p>{resumeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => void resumeIncident(live?.id ?? params.incident ?? activeId ?? '')}>Retry loading evidence</button><a className="btn btn-ghost btn-sm" href="/workbench">Back to workbench</a></div>}
+        {loadingWorkspace ? <WorkbenchLoading incident={loadingIncident} /> : !resumeError && <>
+        <section className="wb-metrics" aria-label="Investigation metrics">
+          <PhaseStepper seen={seen} current={frame.phase} escalated={verdict === 'ESCALATE'} />
+          <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} target={target} idle={!hasRun} />
+        </section>
+        {!resolving && !connectedControls && <section id="scenario-settings" className="wb-settings" aria-label="Scenario settings" hidden={!settingsOpen}>
             <div className="ctrl-row">
               <label className="field">
                 <span>Fault</span>
@@ -461,18 +501,8 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                   ))}
                 </div>
               </div>
-              <div className="ctrl-buttons">
-                {engine === 'local' && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={skip} disabled={!running}>
-                    <FastForward size={15} aria-hidden="true" /> Skip to review
-                  </button>
-                )}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={resetAll} disabled={!hasRun || (engine === 'live' && running)}>
-                  <RotateCcw size={15} aria-hidden="true" /> Reset
-                </button>
-              </div>
             </div>
-            {engine === 'live' && <details className="challenge-controls">
+            {engine === 'live' && <details className="challenge-controls" open={challengeSettingsOpen} onToggle={(event) => setChallengeSettingsOpen(event.currentTarget.open)}>
               <summary>Challenge conditions &amp; memory</summary>
               <div className="challenge-settings">
                 {backend?.harness && backend.twin.backend === 'model' && <label className="field"><span>Challenge conditions</span>
@@ -485,16 +515,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                 <label className="memory-toggle"><input type="checkbox" checked={useMemory} onChange={(event) => setUseMemory(event.target.checked)} disabled={running} />Retest compatible historical fixes</label>
               </div>
             </details>}
-          </div>}
-        </section>
-
-        <div className="workbench-toolbar">
-          <button type="button" className="btn btn-ghost btn-sm" aria-pressed={presentation} onClick={() => setPresentation(!presentation)}>Presentation view</button>
-          {backend && <IncidentHistory onResume={(id) => void resumeIncident(id)} disabled={running || starting} />}
-          {live && verdictVisible && backend?.harness && <a className="btn btn-ghost btn-sm" href={`/review?incident=${encodeURIComponent(live.id)}`} target="_blank" rel="noreferrer">Review trial (new tab)</a>}
-          {live && <span className="connection-state" role="status">{live.ended ? 'Evidence synchronized' : streamState === 'connected' ? 'Live events connected' : streamState === 'reconnecting' ? 'Connection lost · reconnecting…' : 'Connecting to incident…'}</span>}
-          {live && !live.ended && ['closed', 'reconnecting'].includes(streamState) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setStreamAttempt((n) => n + 1)}>Reconnect</button>}
-        </div>
+        </section>}
         {connected && activeId && incident && activeId !== live?.id && (
           <div className="follow-notice" role="status">
             <span className="follow-dot" aria-hidden="true" />
@@ -502,24 +523,22 @@ export function Workbench({ theme, onToggleTheme }: Props) {
             <button type="button" className="btn btn-primary btn-sm" onClick={() => void resumeIncident(activeId)} disabled={starting}>Follow live investigation</button>
           </div>
         )}
-        {resumeError && <div className="recovery-notice" role="alert"><p>{resumeError}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => void resumeIncident(live?.id ?? params.incident ?? '')}>Retry loading evidence</button></div>}
-        {live?.detail?.recovered && <p className="recovery-notice">Saved evidence · {live.detail.outcome?.reason ?? 'This incident is complete and retained for review.'}</p>}
         {view?.run.exercise === 'provider_outage' && <p className="recovery-notice" role="status">Simulated provider outage. No model request was sent; the runbook fallback was tested through the same gates.</p>}
         {view?.run.variant && view.run.variant !== 'standard' && <p className="scenario-notice">Scenario variant: {backend?.variants?.find((variant) => variant.id === view.run.variant)?.label ?? view.run.variant.replaceAll('_', ' ')}</p>}
-        <ImpactSummary frame={frame} view={view} ready={verdictVisible} target={target} />
-        <div className="wb-grid">
-            <div className="wb-metrics">
-              <PhaseStepper seen={seen} current={frame.phase} escalated={verdict === 'ESCALATE'} />
-              <Counters frame={frame} wall={wall} verdictAt={verdictVisible ? verdictWall : null} target={target} />
-            </div>
-            <section className={`verdict-card ${verdict ? `v-${verdict.toLowerCase()}` : failedEvent ? 'v-inconclusive' : hasRun || starting ? 'v-running' : 'v-idle'}`} aria-labelledby="verdict-title">
-              {!hasRun && !starting && (
-                <>
-                  <p className="stage-kicker">How to read this</p>
-                  <h2 id="verdict-title">Every recommendation carries evidence.</h2>
-                  <p>{resolving ? 'Checking the connection…' : connected ? 'TwinOps detects service failures in Metro Network through its API, reproduces them in an isolated twin and tests fixes before asking for your approval.' : 'The harness breaks the demo network with a fault TwinOps cannot see. TwinOps observes, reproduces the fault in a twin, tests fixes there, attacks its best answer and only then asks you.'}</p>
-                </>
-              )}
+        {hasRun && current && showInvestigation && <ImpactSummary frame={frame} view={view} ready={verdictVisible} target={target} />}
+        {live && verdictVisible && <div className="segmented workspace-views" role="group" aria-label="Workbench view">
+          <button type="button" className={workspaceTab === 'decision' ? 'is-on' : ''} aria-pressed={workspaceTab === 'decision'} onClick={() => setWorkspaceTab('decision')}>Decision review</button>
+          <button type="button" className={workspaceTab === 'investigation' ? 'is-on' : ''} aria-pressed={workspaceTab === 'investigation'} onClick={() => setWorkspaceTab('investigation')}>Investigation detail</button>
+        </div>}
+        <div className={`wb-grid ${showInvestigation || !hasRun ? '' : 'decision-layout'}`}>
+          <div className="wb-aside">
+            {(hasRun || starting || !connectedControls) && <section className={`verdict-card ${verdict ? `v-${verdict.toLowerCase()}` : failedEvent ? 'v-inconclusive' : hasRun || starting ? 'v-running' : 'v-idle'}`} aria-labelledby="verdict-title">
+              {!hasRun && !starting && <>
+                <p className="stage-kicker">{resolving ? 'Connecting' : 'Simulation workspace'}</p>
+                <h2 id="verdict-title">{resolving ? 'Checking your connection' : 'Ready to investigate'}</h2>
+                <p>{resolving ? 'Loading the network and available controls…' : 'Choose a scenario and break the demo network. Follow each stage above as TwinOps reproduces the incident and tests a repair.'}</p>
+                {!resolving && <p className="application-note">{PACK_OPTIONS.find((p) => p.id === pack)?.name} · {faultChoice === 'random' ? 'Random sealed fault' : FAULT_INFO[faultChoice].label}</p>}
+              </>}
               {(starting || hasRun) && !verdict && !failedEvent && (
                 <>
                   <p className="stage-kicker" title={runId || undefined}>{runId ? `Run ${shortId(runId)} · seed ${seed}` : 'Contacting the backend'}</p>
@@ -556,6 +575,41 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                     </p>
                   )}
                   {thinking && <ModelThinking key={thinking.seq} event={thinking} />}
+                  {awaiting && view.run.selected && (!backend?.authenticationRequired || backend.role === 'approver') && (
+                    <div className="verdict-actions">
+                      <button type="button" className="btn btn-primary" onClick={() => setDialogOpen(true)}>
+                        <ShieldCheck size={16} aria-hidden="true" /> Review &amp; approve
+                      </button>
+                      {canDrift && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void onDrift()} disabled={drifted}>
+                          <TriangleAlert size={15} aria-hidden="true" /> {drifted ? 'Drift injected' : 'Simulate drift'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {applyStep && (
+                    <div className="apply-progress" role="status">
+                      <StatusChip tone={applyStep.tone === 'fail' ? 'fail' : 'pending'}>{applyStep.tone === 'fail' ? 'Rolling back' : 'Applying approved change'}</StatusChip>
+                      <p><strong>{applyStep.title}</strong> · {applyStep.summary}</p>
+                      <div className="scan" aria-hidden="true" />
+                    </div>
+                  )}
+                  {outcome && (
+                    <p className="verdict-outcome">
+                      <StatusChip tone={outcome.status === 'applied' ? 'ok' : outcome.status === 'rejected_by_operator' || outcome.status === 'expired' ? 'warn' : 'fail'}>
+                        {outcome.status === 'applied'
+                          ? 'Applied · post-checks passed'
+                          : outcome.status === 'rejected_by_operator'
+                            ? 'Rejected by operator'
+                            : outcome.status === 'rolled_back'
+                              ? 'Rolled back'
+                              : outcome.status === 'expired'
+                                ? 'Approval expired'
+                                : outcome.status === 'recovery_required' ? 'Operator recovery required' : 'Apply refused'}
+                      </StatusChip>
+                      <span>{outcome.reason}</span>
+                    </p>
+                  )}
                   {view.narrative && (
                     <div className="briefing">
                       <p className="briefing-head">
@@ -581,38 +635,9 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                       <MessageSquareText size={15} aria-hidden="true" /> Ask TwinOps about this run
                     </button>
                   )}
-                  {awaiting && view.run.selected && (
-                    <div className="verdict-actions">
-                      <button type="button" className="btn btn-primary" onClick={() => setDialogOpen(true)}>
-                        <ShieldCheck size={16} aria-hidden="true" /> Review &amp; approve
-                      </button>
-                      {canDrift && (
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void onDrift()} disabled={drifted}>
-                          <TriangleAlert size={15} aria-hidden="true" /> {drifted ? 'Drift injected' : 'Simulate drift'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {outcome && (
-                    <p className="verdict-outcome">
-                      <StatusChip tone={outcome.status === 'applied' ? 'ok' : outcome.status === 'rejected_by_operator' || outcome.status === 'expired' ? 'warn' : 'fail'}>
-                        {outcome.status === 'applied'
-                          ? 'Applied · post-checks passed'
-                          : outcome.status === 'rejected_by_operator'
-                            ? 'Rejected by operator'
-                            : outcome.status === 'rolled_back'
-                              ? 'Rolled back'
-                              : outcome.status === 'expired'
-                                ? 'Approval expired'
-                                : outcome.status === 'recovery_required' ? 'Operator recovery required' : 'Apply refused'}
-                      </StatusChip>
-                      <span>{outcome.reason}</span>
-                    </p>
-                  )}
                   {connected ? (
                     <p className="verdict-source">
                       Source: Metro Network · TwinOps received observations, not a fault label.
-                      {backend?.networkUrl && <> <a href={backend.networkUrl} target="_blank" rel="noreferrer">Open Metro Network <ArrowUpRight size={13} aria-hidden="true" /></a></>}
                     </p>
                   ) : (
                   <button type="button" className="reveal" onClick={() => void onReveal()} aria-expanded={reveal}>
@@ -633,18 +658,23 @@ export function Workbench({ theme, onToggleTheme }: Props) {
                   </p>
                 </>
               )}
-            </section>
-          <div className="wb-left">
-            <Stage topo={topo} frame={frame} animate={!reduced} target={target} />
-            <CandidateBoard frame={frame} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />
+            </section>}
+            {verdictVisible && !showInvestigation && <ImpactSummary frame={frame} view={view} ready target={target} />}
+            {connectedControls && !hasRun && <ConnectedApplication connection={connection} error={connectionError} canOperate={canInvestigate}
+              networkUrl={backend?.networkUrl} onUpdate={setConnection} onExercise={() => { resetAll(); setFollowExercise(true); }} />}
+            {showInvestigation && hasRun && <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />}
           </div>
-          <Timeline events={visible.filter((e) => e.kind !== 'model_call')} />
+          {(showInvestigation || !hasRun) && <div className="wb-left">
+            <Stage topo={topo} frame={frame} animate={!reduced} target={target} unavailable={!current && (resolving || watching && !measured || !watching && (starting || Boolean(resumeError)))} />
+            {frame.candidates.length > 0 && <CandidateBoard frame={frame} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />}
+          </div>}
         </div>
+        {verdictVisible && view && <DecisionReview view={view} lifecycle={lifecycle} />}
         {verdictVisible && view && <CandidateComparison view={view} onInspect={(id) => { setInspectId(id); setEvidenceTab('gate'); document.getElementById('evidence')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }} />}
-        {verdictVisible && <EvidenceReplay key={runId} events={visible} />}
+        {verdictVisible && showInvestigation && <EvidenceReplay key={runId} events={visible} />}
 
 
-        <Evidence
+        {hasRun && <Evidence
           view={view}
           frame={frame}
           events={visible}
@@ -655,9 +685,10 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           onInspect={setInspectId}
           verdictVisible={verdictVisible}
           decisionVisible={Boolean(outcome)}
-        />
-        {backend && <BenchmarkPanel />}
-        {backend?.harness && <ReviewMetrics />}
+        />}
+        {backend && hasRun && <BenchmarkPanel />}
+        {backend?.harness && hasRun && <ReviewMetrics />}
+        </>}
       </main>
 
       {view?.run.selected && (
@@ -666,6 +697,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           open={dialogOpen}
           view={view}
           requirePasscode={engine === 'live' && Boolean(backend?.approvalAuth)}
+          canApprove={!live || Boolean(lifecycle?.canApprove) && (!backend?.authenticationRequired || backend.role === 'approver')}
           busy={decisionBusy}
           error={decisionError}
           targetLabel={connected ? 'Metro Network (Containerlab prod lab) only' : live && backend?.twin.backend === 'emulated' ? 'Containerlab prod lab only' : 'demo network only'}

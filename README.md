@@ -88,7 +88,15 @@ Metro Network's API documentation is at `/api/docs`. Connector endpoints are `GE
 `POST /api/issues/{id}/finish`, `POST /api/apply`, and `POST /api/restore`. Applies check the expected
 state hash under the device lock and reject changed targets or repeated different operations.
 Rollback uses the server's retained pre-change snapshot. `/api/faults` and `/api/reset` are local
-demo controls used by Metro Network, not tools exposed to the TwinOps planner.
+demo controls used by Metro Network, not tools exposed to the TwinOps planner. The workbench's
+**Metro Network controls** panel forwards explicit operator fault/reset requests to those same
+guarded endpoints. Investigator or approver access is required when role authentication is on.
+The dashboard stays visible while idle, using the connector's measured topology and probes;
+unavailable measurements are labelled rather than replaced with synthetic healthy results.
+The pipeline and counters remain at the top in both idle and active states.
+Refresh uses a neutral loading shell until the workspace or incident evidence is available.
+The full application and fault controls appear only on the idle workbench; incident views keep
+application links and current network status in the compact **Application status** disclosure.
 
 ### Original self-contained demo
 
@@ -119,6 +127,16 @@ Without a backend, the workbench runs its in-browser engine automatically. `?eng
 
 The workbench includes a presentation view, measured service impact with tested-slice coverage, a candidate comparison, an evidence replay, and source observations behind hypotheses. Live incident URLs retain the incident ID so refresh resumes the same investigation. **Recent incidents** opens saved evidence; **Planner benchmark** compares reports for matching topology packs and seed ranges. The elapsed timer keeps running while a model call or event stream is quiet.
 
+Live verdicts now open **Decision review**: the proposed change, evidence provenance and age, verification coverage, remaining uncertainty, and approval. **Investigation detail** retains the topology, candidate timeline and replay. The API supplies the incident lifecycle and allowed actions; archived evidence cannot authorize a new write.
+
+### Evidence and investigation contracts
+
+Each capture is bracketed by target-state hashes and carries a versioned snapshot, collection time and captured-content hash. Changing targets stop the investigation. Probe, alarm, log and change-history records carry explicit provenance: `measured`, `model-derived`, `synthetic`, `interpreted` or `unavailable`. Lab traffic probes are measured; scenario logs/history remain synthetic. The model backend never labels simulated evidence as measured.
+
+Investigation collects at most four allow-listed diagnostics, reranking hypotheses after each result. The policy selects direct-IP HTTPS, DNS lookup, route lookup or TLS verification; the planner reads the collected results and cannot execute commands. In the lab these use real `curl --resolve`, `dig` and read-only FRR commands. Ending early requires the current hypothesis's diagnostic pair and a stable ranking. Unavailable diagnostics are not network failures; incomplete diagnostic coverage blocks candidate testing. Hypothesis stability alone does not prove a cause: reproduction, regression, challenge and rollback gates must still pass.
+
+Twin selection follows graph paths from every affected journey, includes dependencies, alternate transit paths and an unaffected control where available, then checks adequacy before testing. Missing critical paths or capabilities block approval. The `branch` model pack adds a transit PoP and different links; it is not a relabelled core graph. The current action adapters still model one B17/DNS-1/GW-1/SVC-1 service chain. The physical Containerlab adapter supports the eight-device core and enterprise packs only.
+
 **Facts & scope** separates observed probes, interpreted hypotheses, deterministic test results and untested conditions. Source IDs identify evidence; they do not prove every sentence an AI writes. The planner now receives failed restoration and regression probes as revision feedback, not only failed challenges. At most two revisions run through the full tests again.
 
 **Memory** retrieves at most one compatible, successfully applied historical fix using matching observed failure signals. It never uses the sealed fault label. Pack, backend, topology, catalogue and policy versions must match. The fix is tested as a new candidate, with current rollback checks and a new approval decision. A matching symptom does not establish that yesterday's fix works today. Memory provenance is included in the Proof Pack.
@@ -129,11 +147,28 @@ For the memory demonstration: run and approve an F1 incident with a fixed seed, 
 
 Evidence is committed to `TWINOPS_DATA_DIR/incidents.sqlite3` before events are published. Completed runs, approvals, write logs and Proof Packs survive a process restart on the same disk. Unfinished investigations become read-only on restart: outstanding approvals expire, and an interrupted apply is marked `recovery_required`. Archived runs must be investigated again before any new approval.
 
+The same transaction journals events by incident/sequence and operations by operation ID. Approvals are HMAC-signed and bind the exact tested change, target hash, operator, decision, expiry and operation ID. Execution rechecks the signature, content hash, evidence age, target drift and apply policy. Repeating the same completed operation does not write again. Three post-change observation windows run by default; any failed window triggers rollback and verification, retaining the failed window in the outcome. Signing authority is intentionally lost on restart.
+
+### Authenticated single-host pilot
+
+Set `TWINOPS_REQUIRE_AUTH=true` and configure distinct `TWINOPS_VIEWER_TOKEN`, `TWINOPS_INVESTIGATOR_TOKEN` and `TWINOPS_OPERATOR_TOKEN` secrets. Viewers read evidence and perform review trials, investigators start investigations and ask questions, and approvers also approve/reject. Browser login uses an expiring HttpOnly session cookie. Set `TWINOPS_SECURE_COOKIES=true` when using HTTPS. These are shared role credentials, not individual SSO identities; the entered operator ID is a review label.
+
+`TWINOPS_APPLY_ENABLED=false` blocks new writes while keeping evidence available. Apply also defaults off when the demo harness is disabled; `npm run dev:connected` turns it on for the local lab unless you set `TWINOPS_APPLY_ENABLED` yourself. For an immediate halt, create `TWINOPS_DATA_DIR/apply-disabled`; remove it to restore the configured policy. The gateway checks this file again before a new write. It does not interrupt an already-running device command or prevent a necessary rollback. `TWINOPS_POSTCHECK_SAMPLES` (default 3) and `TWINOPS_POSTCHECK_INTERVAL_S` (default 2) configure recovery observation.
+
+For a local model pilot with evidence outside the container lifecycle, supply the three role secrets in your shell and run `docker compose -f deploy/compose.pilot.yml up --build`. The template binds to localhost, uses a named persistent volume, and starts with apply disabled. Preserve/back up that volume; do not use `down --volumes` when retaining evidence. This remains a single-process deployment. Multi-host coordination, enterprise identity and Cloud Run durable storage require separate integration.
+
 ### Operator review trials
 
 After a verdict, **Review trial** opens a separate, read-only task. A participant reviews the same candidate using raw observations or its Proof Pack, then records **Accept**, **Reject** or **Need more evidence**. Server-measured duration and agreement with the recorded gate are saved without names, comments, approval tokens or network writes.
 
-The measurement panel compares only incident/candidate tasks reviewed in both conditions and exports the individual trials. These are exploratory, anonymous measurements: repeat participation, prior exposure and order effects are not controlled. Gate agreement is not production safety. Automated tests do not count as human-study evidence, and no time savings are claimed before real participants complete trials. Arrange counterbalanced tasks with different engineers for a pilot; do not reuse a task a participant has already seen as a blind comparison.
+The measurement panel compares only incident/candidate tasks reviewed in both conditions and exports individual trials. Open trials are exploratory anonymous measurements without participation/order controls. For an assigned study, create a JSON task list with distinct saved incidents (for example `[{"incidentId":"inc-...","candidateId":"cand-B2"}, ...]`) and run:
+
+```sh
+PYTHONPATH=backend .venv/bin/python -m twinops.review_study --data-dir backend/.data \
+  --tasks /path/to/tasks.json --participants 4 --seed 7 --base-url http://127.0.0.1:8000 --out /path/to/review-plan.json
+```
+
+The tool balances each task across raw/Proof Pack conditions, rotates task order, and produces pseudonymous participant links. Give each engineer only their ordered links and a viewer account. The server enforces the assigned condition, order and one start per assignment; results include study, participant and order fields for analysis. A lost/expired trial stays consumed rather than silently counting repeat exposure. The tool cannot verify human identity or prior exposure outside the study. Gate agreement is not production safety. Automated tests are not human-study evidence, and no time savings are claimed before real participants complete trials.
 
 ## Configuration (`.env`)
 
@@ -189,6 +224,17 @@ To test configuration and evidence changes independently of the seed, repeat wit
 
 The backend suite includes a 20-incident synthetic rehearsal across the scenario variants, checking approval, post-checks and safe escalation. This is not a 20-run Containerlab or live-LLM soak result.
 
+The foundation matrix covers core and branch graphs, all four faults and all four evidence variants. Keep repair and abstention counts separate: missing intended-configuration history can justify escalation for routing/DNS. Matrix mode exits nonzero for unexpected verdicts, unsafe passes, diagnosis writes, excess diagnostic budget or failed controls.
+
+```sh
+TWINOPS_ENV_FILE=/dev/null PYTHONPATH=backend .venv/bin/python -m twinops.evaluation \
+  --planner runbook --matrix --start-seed 9001 --seeds 10 --out backend/.data/reports/foundations.json
+```
+
+This 320-case suite is synthetic model validation. A fresh held-out planner evaluation must reserve new seeds and freeze prompts; these implementation-validation seeds have now been exercised. Run with `--planner llm --compare` for provider-specific evidence after configuring a provider. Real operator productivity and sustained device reliability require separate trials.
+
+The [recorded validation summary](docs/validation/foundation-evaluation.json) contains 200 verified repairs, 120 safe abstentions, zero unsafe passes and zero diagnosis writes. It also records the scope of the four real-lab read-only diagnostic smoke checks. These results do not establish human review-time savings.
+
 ## Emulated lab (Containerlab)
 
 Real routing, DNS and TLS rather than an animation. On macOS, Containerlab runs inside its official container, so no local install is needed.
@@ -218,9 +264,10 @@ How the lab behaves:
 - Challenges include:
   - a paused PoP, for a secondary failure;
   - the warm resolver cache;
-  - IPv6 parity.
+  - IPv6 parity;
+  - tripled concurrent probe sampling (not production traffic volume).
 - Rollback is rehearsed by reading the device state back.
-- The approved change is applied to the `prod` instance and verified with 11 real post-checks.
+- The approved change is applied to the `prod` instance and verified across the configured observation windows, including customer, negative and IPv6 probes.
 - Lab commands are allow-listed (`vtysh`, `dig`, `curl`, …). Containers are only paused, never restarted. Rendered configs are validated against injection.
 
 Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
@@ -237,6 +284,9 @@ Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/config` | Planner, twin backend, whether approval needs a passcode |
+| `GET /api/connections` | Connection status, measured topology/probes, exercise capabilities and detected issues |
+| `POST /api/connections/network/fault` | Human lab exercise: `{fault}`; forwards to Metro Network, then automatic detection follows |
+| `POST /api/connections/network/reset` | Human lab reset; preserves Metro's active-investigation and recovery guards |
 | `POST /api/incidents` | `{pack, fault, seed?, pace}` → 202 with `incidentId`, `eventsUrl` |
 | `GET /api/incidents` | Latest 50 saved incident summaries for history |
 | `GET /api/incidents/{id}/events` | Server-Sent Events (`run`, `end`), resumable with `Last-Event-ID` |

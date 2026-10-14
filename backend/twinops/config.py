@@ -63,7 +63,20 @@ class Settings:
     static_dir: Path | None = field(default_factory=lambda: Path(p) if (p := os.environ.get("TWINOPS_STATIC_DIR")) else None)
     cors_origins: tuple[str, ...] = field(default_factory=lambda: tuple(o for o in os.environ.get("TWINOPS_CORS_ORIGINS", "http://localhost:5173").split(",") if o))
     max_active_runs: int = field(default_factory=lambda: int(os.environ.get("TWINOPS_MAX_ACTIVE_RUNS", "4")))
+    apply_enabled: bool | None = field(default_factory=lambda: _bool("TWINOPS_APPLY_ENABLED", False) if "TWINOPS_APPLY_ENABLED" in os.environ else None)
+    require_auth: bool = field(default_factory=lambda: _bool("TWINOPS_REQUIRE_AUTH", False))
+    secure_cookies: bool = field(default_factory=lambda: _bool("TWINOPS_SECURE_COOKIES", False))
+    postcheck_samples: int = field(default_factory=lambda: max(1, min(10, int(os.environ.get("TWINOPS_POSTCHECK_SAMPLES", "3")))))
+    postcheck_interval_s: float = field(default_factory=lambda: max(0, min(60, float(os.environ.get("TWINOPS_POSTCHECK_INTERVAL_S", "2")))))
     rate_limit_per_min: int = field(default_factory=lambda: int(os.environ.get("TWINOPS_RATE_LIMIT_PER_MIN", "10")))
+
+    def __post_init__(self) -> None:
+        if self.apply_enabled is None:
+            object.__setattr__(self, "apply_enabled", self.harness_enabled)
+
+    def allows_apply(self) -> bool:
+        """An operator can halt new writes without restarting or expiring evidence."""
+        return bool(self.apply_enabled) and not (self.data_dir / "apply-disabled").exists()
 
     @property
     def gemini_api_key(self) -> str | None:

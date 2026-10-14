@@ -19,6 +19,9 @@ class IncidentStore:
         with self.connect() as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY, created REAL NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL)")
             conn.execute("CREATE TABLE IF NOT EXISTS review_trials (id TEXT PRIMARY KEY, status TEXT NOT NULL, payload TEXT NOT NULL)")
+            conn.execute("CREATE TABLE IF NOT EXISTS incident_events (incident_id TEXT NOT NULL, seq INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (incident_id, seq))")
+            conn.execute("CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL)")
+            conn.execute("CREATE TABLE IF NOT EXISTS review_assignments (id TEXT PRIMARY KEY, study_id TEXT NOT NULL, participant_id TEXT NOT NULL, position INTEGER NOT NULL, trial_id TEXT UNIQUE, payload TEXT NOT NULL)")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -27,8 +30,20 @@ class IncidentStore:
 
     def save(self, record: dict[str, Any]) -> None:
         with self.connect() as conn:
+            for event in record.get("events", []):
+                conn.execute("INSERT OR IGNORE INTO incident_events VALUES (?, ?, ?)",
+                             (record["id"], event["seq"], json.dumps(event, ensure_ascii=False)))
+            approval = record.get("approval") or {}
+            if approval.get("operationId"):
+                conn.execute("INSERT INTO operations VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status=excluded.status, payload=excluded.payload",
+                             (approval["operationId"], record["id"], record["status"], json.dumps({"approval": approval, "outcome": record.get("outcome")})))
             conn.execute("INSERT INTO incidents VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status=excluded.status, payload=excluded.payload",
                          (record["id"], record["created"], record["status"], json.dumps(record, ensure_ascii=False)))
+
+    def events(self, incident_id: str, after: int = 0) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT payload FROM incident_events WHERE incident_id = ? AND seq > ? ORDER BY seq", (incident_id, after)).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def get(self, incident_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -50,9 +65,37 @@ class IncidentStore:
             rows = conn.execute("SELECT payload FROM incidents WHERE status = 'recovery_required'").fetchall()
         return any(json.loads(row[0])["backend"] == "emulated" for row in rows)
 
-    def start_review(self, record: dict[str, Any]) -> dict[str, Any]:
+    def save_study(self, plan: dict[str, Any]) -> None:
+        with self.connect() as conn:
+            for assignment in plan["assignments"]:
+                row = conn.execute("SELECT payload FROM incidents WHERE id = ?", (assignment["incidentId"],)).fetchone()
+                run = json.loads(row[0]).get("run", {}) if row else {}
+                if not any(c["change"]["id"] == assignment["candidateId"] for c in run.get("candidates", [])):
+                    raise ValueError("Every study task must reference an existing tested candidate")
+                conn.execute("INSERT INTO review_assignments VALUES (?, ?, ?, ?, NULL, ?)",
+                             (assignment["id"], assignment["studyId"], assignment["participantId"], assignment["order"], json.dumps(assignment)))
+
+    def start_review(self, record: dict[str, Any], assignment_id: str | None = None) -> dict[str, Any]:
         trial = {**record, "startedAt": time.time()}
         with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if assignment_id:
+                row = conn.execute("SELECT trial_id, payload FROM review_assignments WHERE id = ?", (assignment_id,)).fetchone()
+                if not row:
+                    raise ValueError("Unknown study assignment")
+                assignment = json.loads(row[1])
+                if any(assignment[key] != trial[key] for key in ("incidentId", "candidateId", "mode")):
+                    raise ValueError("Review task does not match the assigned condition")
+                if row[0]:
+                    raise ValueError("This assignment has already started; repeat exposure cannot be measured as a new trial")
+                pending = conn.execute("SELECT 1 FROM review_assignments a LEFT JOIN review_trials t ON t.id = a.trial_id "
+                                       "WHERE a.study_id = ? AND a.participant_id = ? AND a.position < ? AND (t.status IS NULL OR t.status != 'closed')",
+                                       (assignment["studyId"], assignment["participantId"], assignment["order"])).fetchone()
+                if pending:
+                    raise ValueError("Complete the earlier assigned review first")
+                trial.update({key: assignment[key] for key in ("studyId", "participantId", "order")})
+                trial["assignmentId"] = assignment_id
+                conn.execute("UPDATE review_assignments SET trial_id = ? WHERE id = ?", (trial["trialId"], assignment_id))
             conn.execute("INSERT INTO review_trials VALUES (?, 'running', ?)", (trial["trialId"], json.dumps(trial)))
         return {key: trial[key] for key in ("trialId", "startedAt", "mode", "candidateId")}
 
@@ -93,4 +136,7 @@ class IncidentStore:
             modes.append({"mode": mode, "trials": len(trials), "gateAgreements": sum(record["gateAgreement"] for record in trials),
                           "medianMs": statistics.median(record["elapsedMs"] for record in trials) if trials else None})
         return {"totalTrials": len(records), "pairedTasks": len(paired), "modes": modes,
-                "note": "Exploratory anonymous trials, matched on incident and candidate. Timing is server wall time. Repeat participation and order effects are not controlled. Gate agreement is not production safety or proven time savings."}
+                "assignedTrials": sum(bool(r.get("assignmentId")) for r in records),
+                "studies": sorted({r["studyId"] for r in records if r.get("studyId")}),
+                "note": "Exploratory trials matched on incident and candidate. Export assignment, pseudonymous participant and order fields for study analysis; open trials lack those controls. "
+                        "Timing is server wall time. Gate agreement is not production safety or proven time savings."}

@@ -11,6 +11,7 @@ interface Props {
   view: RunView;
   /** Backend requires an operator passcode (server-side token check). */
   requirePasscode?: boolean;
+  canApprove?: boolean;
   busy?: boolean;
   error?: string | null;
   targetLabel?: string;
@@ -18,7 +19,7 @@ interface Props {
   onDecide: (operator: string, comment: string, decision: 'approve' | 'reject', passcode: string) => void;
 }
 
-export function ApprovalDialog({ open, view, requirePasscode = false, busy = false, error = null, targetLabel = 'demo network only', onClose, onDecide }: Props) {
+export function ApprovalDialog({ open, view, requirePasscode = false, canApprove = true, busy = false, error = null, targetLabel = 'demo network only', onClose, onDecide }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [operator, setOperator] = useState('');
   const [comment, setComment] = useState('');
@@ -36,7 +37,7 @@ export function ApprovalDialog({ open, view, requirePasscode = false, busy = fal
   const missing = !operator.trim() || (requirePasscode && !passcode) || busy;
   const submit = (decision: 'approve' | 'reject') => (e?: FormEvent) => {
     e?.preventDefault();
-    if (missing || (decision === 'approve' && !ack)) return;
+    if (missing || (decision === 'approve' && (!ack || !canApprove))) return;
     onDecide(operator.trim(), comment.trim(), decision, passcode);
   };
 
@@ -128,13 +129,14 @@ export function ApprovalDialog({ open, view, requirePasscode = false, busy = fal
               {error}
             </p>
           )}
+          {!canApprove && <p className="approval-warn">Approval is unavailable. The evidence may have expired, the investigation may be archived, or applying changes is disabled.</p>}
         </div>
 
         <footer>
           <button type="button" className="btn btn-ghost" onClick={submit('reject')} disabled={missing}>
             Reject change
           </button>
-          <button type="submit" className="btn btn-primary" disabled={missing || !ack}>
+          <button type="submit" className="btn btn-primary" disabled={missing || !ack || !canApprove}>
             <ShieldCheck size={16} aria-hidden="true" /> {busy ? 'Applying…' : 'Approve & apply to demo lab'}
           </button>
         </footer>

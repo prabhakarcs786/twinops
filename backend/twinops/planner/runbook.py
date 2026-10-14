@@ -9,7 +9,7 @@ from ..model import covers
 from ..topology import node_by_id, pop_by_index
 from .base import DiagnosticPort
 
-RUNBOOK_VERSION = "runbook-planner-0.1.0"
+RUNBOOK_VERSION = "runbook-planner-0.2.0"
 
 
 def _list(items: list[str]) -> str:
@@ -41,7 +41,7 @@ def diagnose_runbook(obs: dict[str, Any], topo: dict[str, Any], port: Diagnostic
         return [p["id"] for p in probes]
 
     wrong_address = [p for p in failed if p.get("failure") == "wrong_address"]
-    diagnostics = [port.direct_ip(p["id"]) for p in wrong_address]
+    diagnostics = [d for p in wrong_address if (d := port.direct_ip(p["id"])).get("available", True)]
     drafts: list[dict[str, Any]] = []
 
     no_route = [p for p in failed if p.get("failure") == "no_route" and p.get("failedAt") == "B17"]
@@ -108,6 +108,15 @@ def diagnose_runbook(obs: dict[str, Any], topo: dict[str, Any], port: Diagnostic
         "score": 1 + len(at_service) - 0.75 * len(passing),
     })
 
+    if hasattr(port, "results"):
+        for evidence in port.results():
+            if not evidence.get("available", True) or evidence.get("diagnostic") == "direct_ip":
+                continue
+            target = {"route_lookup": "edge_filter_regression", "dns_lookup": "dns_record_incorrect", "tls_probe": "tls_certificate_expired"}.get(evidence["diagnostic"])
+            for draft in drafts:
+                if draft["type"] == target:
+                    draft["contradicting" if evidence["ok"] else "supporting"].append(evidence["id"])
+                    draft["score"] += -1 if evidence["ok"] else 1
     ranked = sorted(drafts, key=lambda d: -d["score"])[:3]
     hypotheses = [{**d, "id": f"H{i + 1}", "rank": i + 1, "score": _r1(d["score"])} for i, d in enumerate(ranked)]
     return hypotheses, diagnostics

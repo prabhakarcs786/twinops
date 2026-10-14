@@ -8,6 +8,7 @@ const PORT = 8077;
 
 export default defineConfig({
   testDir: './tests/live',
+  outputDir: 'test-results/live',
   timeout: 90_000,
   workers: 1,
   reporter: [['list']],
@@ -37,7 +38,9 @@ export default defineConfig({
       TWINOPS_PLANNER: 'runbook',
       TWINOPS_OPERATOR_TOKEN: 'e2e-passcode',
       TWINOPS_RATE_LIMIT_PER_MIN: '600',
-      TWINOPS_DATA_DIR: 'test-results/live-data',
+      TWINOPS_MAX_ACTIVE_RUNS: '100',
+      TWINOPS_POSTCHECK_INTERVAL_S: '0',
+      TWINOPS_DATA_DIR: '.playwright-data/live',
     },
   },
 });

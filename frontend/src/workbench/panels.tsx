@@ -18,8 +18,17 @@ const PHASES: { id: Phase; label: string }[] = [
 ];
 
 export function PhaseStepper({ seen, current, escalated = false }: { seen: Set<Phase>; current: Phase; escalated?: boolean }) {
+  const list = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const container = list.current;
+    const active = container?.querySelector('[aria-current="step"]');
+    if (container && active && container.scrollWidth > container.clientWidth) {
+      const offset = active.getBoundingClientRect().left - container.getBoundingClientRect().left;
+      container.scrollLeft += offset - (container.clientWidth - active.clientWidth) / 2;
+    }
+  }, [current]);
   return (
-    <ol className="stepper" aria-label="Incident pipeline">
+    <ol ref={list} className="stepper" aria-label="Incident pipeline" tabIndex={0}>
       {PHASES.map((p, i) => {
         const state = p.id === current ? 'active' : seen.has(p.id) ? 'done' : 'todo';
         return (
@@ -33,17 +42,17 @@ export function PhaseStepper({ seen, current, escalated = false }: { seen: Set<P
   );
 }
 
-export function Counters({ frame, wall, verdictAt, target = DEMO_TARGET }: { frame: Frame; wall: number; verdictAt: number | null; target?: TargetCopy }) {
+export function Counters({ frame, wall, verdictAt, target = DEMO_TARGET, idle = false }: { frame: Frame; wall: number; verdictAt: number | null; target?: TargetCopy; idle?: boolean }) {
   const c = frame.counters;
   const items: { label: string; value: ReactNode; hint: string; tone?: string }[] = [
-    { label: verdictAt !== null ? 'Time to verdict' : 'Elapsed', value: fmtClock(verdictAt ?? wall), hint: 'real time since the break' },
+    { label: verdictAt !== null ? 'Time to verdict' : 'Elapsed', value: fmtClock(verdictAt ?? wall), hint: idle ? 'Waiting for an incident' : 'real time since the break' },
     { label: 'Experiments in twin', value: c.experiments, hint: `${c.revisions} revised after a challenge` },
     { label: 'Challenges run', value: c.challengesRun, hint: `${c.probesRun} probes executed` },
     { label: 'Unsafe fixes rejected', value: c.unsafeRejected, hint: 'failed regression, challenge or policy', tone: c.unsafeRejected ? 'fail' : undefined },
-    { label: 'Production writes during diagnosis', value: c.productionWritesDuringDiagnosis, hint: `computed from the ${target.prose.replace(/^the /, '')} write log`, tone: 'ok' },
+    { label: 'Production writes during diagnosis', value: idle ? '—' : c.productionWritesDuringDiagnosis, hint: idle ? 'No diagnosis running' : `computed from the ${target.prose.replace(/^the /, '')} write log`, tone: idle ? undefined : 'ok' },
   ];
   return (
-    <dl className="counters">
+    <dl className="counters" tabIndex={0} aria-label="Investigation counters">
       {items.map((item) => (
         <div key={item.label} className={`counter ${item.tone ? `counter-${item.tone}` : ''}`}>
           <dt>{item.label}</dt>
@@ -73,6 +82,16 @@ function JourneyList({ probes }: { probes: Frame['prod']['probes'] }) {
   );
 }
 
+function SliceNote({ topo, slice }: { topo: Topology; slice: string[] }) {
+  const outside = topo.nodes.filter((n) => !slice.includes(n.id)).map((n) => n.short);
+  if (!outside.length) return null;
+  return (
+    <p className="slice-note">
+      <strong>Dimmed = not in the twin: {outside.join(', ')}.</strong> The twin copies only the failing sites, one healthy neighbour as a control, and the shared core.
+    </p>
+  );
+}
+
 const TWIN_STATE: Record<NonNullable<Frame['twin']>['state'], { tone: ChipTone; text: string }> = {
   building: { tone: 'pending', text: 'Building' },
   reproduced: { tone: 'ok', text: 'Fault reproduced' },
@@ -82,12 +101,12 @@ const TWIN_STATE: Record<NonNullable<Frame['twin']>['state'], { tone: ChipTone; 
   idle: { tone: 'info', text: 'Evidence recorded' },
 };
 
-export function Stage({ topo, frame, animate, target = DEMO_TARGET }: { topo: Topology; frame: Frame; animate: boolean; target?: TargetCopy }) {
-  const prodTone: ChipTone = frame.prod.status === 'healthy' ? 'ok' : frame.prod.status === 'restored' ? 'ok' : 'fail';
-  const prodText = frame.prod.status === 'healthy' ? 'Healthy' : frame.prod.status === 'restored' ? 'Restored · verified' : 'Incident';
+export function Stage({ topo, frame, animate, target = DEMO_TARGET, unavailable = false }: { topo: Topology; frame: Frame; animate: boolean; target?: TargetCopy; unavailable?: boolean }) {
+  const prodTone: ChipTone = unavailable ? 'pending' : frame.prod.status === 'healthy' ? 'ok' : frame.prod.status === 'restored' ? 'ok' : frame.prod.status === 'verifying' ? 'pending' : 'fail';
+  const prodText = unavailable ? 'Awaiting measurements' : frame.prod.status === 'healthy' ? 'Healthy' : frame.prod.status === 'restored' ? 'Restored · verified' : frame.prod.status === 'verifying' ? 'Verifying fix' : 'Incident';
   return (
     <div className="stage">
-      <section className={`stage-panel stage-prod is-${frame.prod.status}`} aria-labelledby="prod-title">
+      <section className={`stage-panel stage-prod is-${unavailable ? 'unavailable' : frame.prod.status}`} aria-labelledby="prod-title">
         <header>
           <div>
             <p className="stage-kicker">{target.kicker}</p>
@@ -121,6 +140,7 @@ export function Stage({ topo, frame, animate, target = DEMO_TARGET }: { topo: To
               animate={animate}
               label={`Twin slice of ${frame.twin.slice.length} nodes: ${frame.twin.caption}`}
             />
+            <SliceNote topo={topo} slice={frame.twin.slice} />
             <JourneyList probes={frame.twin.probes} />
           </>
         ) : (

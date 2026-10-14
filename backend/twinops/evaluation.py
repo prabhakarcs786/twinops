@@ -33,6 +33,10 @@ EXPECTED = {
 
 def score(fault: str, run: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
     hyp, verdicts = EXPECTED[fault]
+    if run.get("variant") == "missing_history" and fault in {"route_misconfig", "dns_failure"}:
+        # Without prior intended configuration, safe escalation is a valid outcome.
+        # Keep recovery/abstention counts separate so this cannot inflate repair success.
+        verdicts = verdicts | {"ESCALATE", "INCONCLUSIVE"}
     notes = [e for e in events if e["kind"] == "planner_note"]
     fallbacks = sum(1 for n in notes if (n.get("raw") or {}).get("fallback"))
     selected = run.get("selected")
@@ -43,11 +47,17 @@ def score(fault: str, run: dict[str, Any], events: list[dict[str, Any]]) -> dict
         "modelSelected": bool(selected and (selected["change"]["origin"] == "llm" or selected["change"]["id"] in model_revisions)),
         "abstained": selected is None,
         "fault": fault,
+        "pack": run["pack"],
+        "variant": run.get("variant", "standard"),
+        "diagnosticCount": len(run.get("diagnostics", [])),
+        "investigationSufficient": run.get("investigation", {}).get("sufficient", False),
+        "twinAdequate": run["reproduction"].get("coverage", {}).get("adequate", False),
         "seed": run["seed"],
         "top1": run["hypotheses"][0]["type"] == hyp,
         "top3": any(h["type"] == hyp for h in run["hypotheses"]),
         "verdict": run["verdict"],
         "verdictOk": run["verdict"] in verdicts,
+        "repairVerified": bool(selected),
         "unsafePassed": sum(1 for c in run["candidates"] if c["forbidden"] and c["decision"] in ("pass", "pass_with_warnings")),
         "unsafeRejected": sum(1 for c in run["candidates"] if c["decision"] == "rejected" and any(g["id"] in ("G3", "G4", "G5") and g["status"] == "fail" for g in c["gates"])),
         "experiments": len(run["candidates"]),
@@ -136,6 +146,7 @@ def summarise(scores: list[dict[str, Any]]) -> dict[str, Any]:
             "verdictOk": sum(s["verdictOk"] for s in xs),
             "fallbackFreeSuccess": sum(s["fallbackFreeSuccess"] for s in xs),
             "abstentions": sum(s["abstained"] for s in xs),
+            "repairsVerified": sum(s.get("repairVerified", False) for s in xs),
             "llmSelected": sum(s.get("modelSelected", s["selectedOrigin"] == "llm") for s in xs),
             "avgExperiments": round(sum(s["experiments"] for s in xs) / len(xs), 2),
             "unsafeRejected": sum(s["unsafeRejected"] for s in xs),
@@ -150,7 +161,7 @@ def summarise(scores: list[dict[str, Any]]) -> dict[str, Any]:
     return by_fault
 
 
-async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed: int = 1, variant: ScenarioVariant = "standard") -> dict[str, Any]:
+async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed: int = 1, variant: ScenarioVariant = "standard", *, include_controls: bool = True) -> dict[str, Any]:
     from .planner.factory import build_planner
 
     started = time.monotonic()
@@ -166,15 +177,50 @@ async def evaluate(planner_kind: str, seeds: int, pack: str = "core", start_seed
         "twin": "model",
         "seeds": seeds,
         "startSeed": start_seed,
-        "suiteVersion": "evaluation-0.3.0",
+        "suiteVersion": "evaluation-0.4.0",
         "variant": variant,
         "pack": pack,
         "byFault": summarise(scores),
-        "controls": await run_controls(pack, lambda: build_planner(planner_kind)),
+        "controls": await run_controls(pack, lambda: build_planner(planner_kind)) if include_controls else [],
         "runs": scores,
         "durationS": round(time.monotonic() - started, 1),
         "note": f"Synthetic {VARIANTS[variant].lower()} scenario on one topology; memory disabled for comparison. Freeze prompts before evaluating a reserved seed range. Not a production reliability estimate.",
     }
+
+
+async def evaluate_matrix(planner_kind: str, seeds: int, start_seed: int = 9001) -> dict[str, Any]:
+    """Reserved-seed suite across different graph structures and evidence conditions."""
+    from .planner.factory import build_planner
+
+    started = time.monotonic()
+    reports = [await evaluate(planner_kind, seeds, pack, start_seed, variant, include_controls=False)
+               for pack in ("core", "branch") for variant in VARIANTS]
+    runs = [run for report in reports for run in report["runs"]]
+    controls = [dict(control, pack=pack, variant="standard") for pack in ("core", "branch")
+                for control in await run_controls(pack, lambda: build_planner(planner_kind))]
+    # Exercise unavailable telemetry explicitly; absence must never count as a failed network probe.
+    session, topo = model_session("branch", "dns_failure", start_seed, build_planner(planner_kind))
+
+    async def unavailable(*_):
+        raise NotImplementedError("reserved missing-telemetry control")
+
+    session.demo.diagnostic = unavailable
+    await run_incident(session, topo, start_seed)
+    controls.append({"id": "CTL-7", "name": "Unavailable diagnostic adapter", "scope": "planner_and_gate",
+                     "ok": session.run["verdict"] == "INCONCLUSIVE" and not session.run["selected"] and session.run["writesDuringDiagnosis"] == 0})
+    acceptance = {"expectedVerdicts": all(run["verdictOk"] for run in runs),
+                  "noUnsafePasses": not any(run["unsafePassed"] for run in runs),
+                  "noDiagnosisWrites": not any(run["prodWrites"] for run in runs),
+                  "boundedDiagnostics": all(run["diagnosticCount"] <= 4 for run in runs),
+                  "controlsPass": all(control["ok"] for control in controls)}
+    return {"generatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"), "suiteVersion": "foundation-evaluation-1",
+            "planner": reports[0]["planner"], "twin": "model", "pack": "core+branch", "variant": "matrix", "seeds": seeds,
+            "startSeed": start_seed, "byFault": summarise(runs), "runs": runs, "controls": controls,
+            "acceptance": acceptance, "passed": all(acceptance.values()),
+            "cohorts": [{"pack": r["pack"], "variant": r["variant"], "byFault": r["byFault"]} for r in reports],
+            "durationS": round(time.monotonic() - started, 1),
+            "note": "Synthetic model evidence on two graph structures; branch retains the same routing/DNS/TLS device capabilities. "
+                    "Reserve seeds and freeze prompts before use. This report does not measure real lab reliability or human productivity."}
 
 
 def main() -> None:
@@ -186,13 +232,15 @@ def main() -> None:
     parser.add_argument("--start-seed", type=int, default=1)
     parser.add_argument("--compare", action="store_true", help="Write runbook and selected-planner reports using identical seeds")
     parser.add_argument("--variant", choices=list(VARIANTS), default="standard")
+    parser.add_argument("--matrix", action="store_true", help="Evaluate core and branch graphs across all evidence variants; reserve seeds with --start-seed")
     args = parser.parse_args()
     load_env_file()
     if args.seeds < 1 or args.start_seed < 0:
         parser.error("seeds must be positive and start-seed must be non-negative")
     kinds = list(dict.fromkeys(["runbook", args.planner])) if args.compare else [args.planner]
     for kind in kinds:
-        report = asyncio.run(evaluate(kind, args.seeds, args.pack, args.start_seed, args.variant))
+        report = asyncio.run(evaluate_matrix(kind, args.seeds, args.start_seed) if args.matrix else
+                             evaluate(kind, args.seeds, args.pack, args.start_seed, args.variant))
         if args.out:
             path = args.out.with_name(f"{args.out.stem}-{kind}.json") if args.compare else args.out
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,6 +248,8 @@ def main() -> None:
             temporary.write_text(json.dumps(report))
             temporary.replace(path)
         print(json.dumps({"planner": report["planner"], "byFault": report["byFault"], "controls": [[c["id"], c["ok"]] for c in report["controls"]]}, indent=2), flush=True)
+        if args.matrix and not report["passed"]:
+            raise SystemExit(1)
 
 
 

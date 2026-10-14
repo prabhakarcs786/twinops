@@ -15,6 +15,7 @@ from .catalogue import (
     touched_nodes,
     validate_change_set,
 )
+from .coverage import adequacy, select_slice
 from .hashing import hash_of, round1
 from .model import State, clone, fixed_suite, modelled_alarms, probe_journey
 from .planner.base import CHALLENGES
@@ -37,22 +38,6 @@ class TwinContext:
     slice: list[str]
     journeys: list[dict[str, Any]]
     affected_ids: list[str]
-
-
-def select_slice(obs: dict[str, Any], topo: Topology) -> list[str]:
-    failing = [next(j for j in topo["journeys"] if j["id"] == p["id"]) for p in obs["probes"] if p["kind"] == "journey" and not p["ok"]]
-    affected = list(dict.fromkeys(j["from"] for j in failing))
-    representatives = affected
-    if len(affected) > 2:
-        by_host: dict[str, str] = {}
-        for j in failing:
-            by_host.setdefault(j["host"], j["from"])
-        representatives = list(by_host.values())
-    unaffected = [p for p in pops(topo) if p["id"] not in affected]
-    adjacent = next((p for p in unaffected if any((lk["a"] == p["id"] and lk["b"] in affected) or (lk["b"] == p["id"] and lk["a"] in affected)
-                                                  for lk in topo["links"])), None)
-    control = [adjacent["id"]] if adjacent else [unaffected[0]["id"]] if unaffected else []
-    return [*representatives, *control, "B17", "DNS-1", "GW-1", "SVC-1"]
 
 
 def create_context(obs: dict[str, Any], topo: Topology, captured: State) -> TwinContext:
@@ -169,6 +154,11 @@ class ModelTwin:
 
 
 async def reproduce(ctx: TwinContext, twin: Twin) -> dict[str, Any]:
+    coverage = adequacy(ctx.obs, ctx.topo, ctx.slice, twin.backend)
+    if not coverage["adequate"]:
+        return {"matched": 0, "total": 0, "affectedReproduced": False, "passed": False,
+                "mismatches": coverage["missingCritical"], "outOfScope": coverage["limitations"],
+                "slice": ctx.slice, "twinProbes": [], "coverage": coverage}
     twin_probes, twin_alarms = await twin.baseline()
     journeys = {j["id"] for j in ctx.journeys}
     relevant = [p for p in ctx.obs["probes"] if p["kind"] != "journey" or p["id"] in journeys]
@@ -201,7 +191,7 @@ async def reproduce(ctx: TwinContext, twin: Twin) -> dict[str, Any]:
         "matched": matched, "total": total, "affectedReproduced": affected_reproduced,
         "passed": affected_reproduced and total > 0 and matched / total >= 0.9,
         "mismatches": mismatches, "outOfScope": [f"{a['node']}: {a['text']}" for a in ctx.obs["alarms"] if not a["modelled"]],
-        "slice": ctx.slice, "twinProbes": twin_probes,
+        "slice": ctx.slice, "twinProbes": twin_probes, "coverage": coverage,
     }
 
 
@@ -296,7 +286,7 @@ def evaluate_gates(repro: dict[str, Any], exp: Experiment, challenges: list[dict
     else:
         hard = [c for c in challenges if not c["ok"] and not c["soft"]]
         missing = [] if exp.errors else [k for k in required_challenges(exp.change)
-                                         if k in exp.supported_challenges and not any(c["kind"] == k for c in challenges)]
+                                         if k not in exp.supported_challenges or not any(c["kind"] == k for c in challenges)]
         if missing:
             add("G4", "fail", f"required challenge evidence missing: {', '.join(missing)}")
         elif hard:

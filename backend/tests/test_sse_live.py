@@ -60,4 +60,6 @@ def test_sse_streams_live_and_resumes_after_decision(server):
                     tail.append(json.loads(line[6:])["kind"])
                 elif line.startswith("data: ") and event == "end":
                     break
-        assert tail == ["approval_recorded", "applied", "post_check"]
+        # Write, verify and one event per observation window keep the operator informed while the apply runs.
+        assert tail[0] == "approval_recorded" and tail[-2:] == ["applied", "post_check"]
+        assert set(tail[1:-2]) == {"apply_progress"} and len(tail) >= 6

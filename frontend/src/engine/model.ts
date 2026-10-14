@@ -1,4 +1,4 @@
-import { findLink, MGMT_PREFIX, nodeById, popByIndex, pops, SERVICE_IPS, SLO_LATENCY_MS } from './topology.ts';
+import { findLink, MGMT_PREFIX, nodeById, pathBetween, popByIndex, pops, SERVICE_IPS, SLO_LATENCY_MS } from './topology.ts';
 import type { Alarm, Journey, ProbeKind, ProbeResult, Topology } from './types.ts';
 
 export interface PrefixRule {
@@ -64,7 +64,7 @@ export function healthyState(topo: Topology): NetState {
       ...clone(archived),
       revision: 'r-2041+h-77',
       // h-77 was a manual hotfix: live on the router, never written to the config archive.
-      v6Prefixes: [p0.v6Prefix!, p1.v6Prefix!, p2.v6Prefix!, p3.v6Prefix!],
+      v6Prefixes: [p0, p1, p2, p3, ...pops(topo).filter((p) => ![p0.id, p1.id, p2.id, p3.id].includes(p.id))].map((p) => p.v6Prefix!),
       steered: [],
       routingUp: true,
     },
@@ -205,7 +205,9 @@ export function probeJourney(state: NetState, topo: Topology, journey: Journey, 
     } else if (!state.b17.v6Prefixes.includes(pop.v6Prefix!)) {
       return fail([pop.id, 'B17'], 'B17', 'no_route', `no route for ${pop.v6Prefix}`);
     }
-    path = [pop.id, 'B17', 'GW-1', 'SVC-1'];
+    const segments = [[pop.id, 'B17'], ['B17', 'GW-1'], ['GW-1', 'SVC-1']].map(([a, b]) => pathBetween(topo, a, b, state.failedNodes));
+    if (segments.some((segment) => !segment.length)) return fail([pop.id], pop.id, 'no_route', 'required service path unavailable');
+    path = [...segments[0], ...segments[1].slice(1), ...segments[2].slice(1)];
   }
 
   for (let i = 1; i < path.length; i++) {

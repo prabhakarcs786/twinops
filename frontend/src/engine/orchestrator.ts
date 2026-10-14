@@ -1,4 +1,5 @@
 import { CATALOGUE_VERSION, describeStep, POLICY_VERSION } from './catalogue.ts';
+import type { EvidenceSnapshot, Investigation } from '../api/contracts.ts';
 import { DemoNetwork } from './harness.ts';
 import { healthyState, sampleJourney } from './model.ts';
 import { diagnose, guardUntrusted, PLANNER_MODE, PLANNER_VERSION, proposeCandidates, reviseCandidate, selectChallenges } from './planner.ts';
@@ -50,6 +51,9 @@ export interface RunOptions {
 }
 
 export interface RunResult {
+  source?: { kind: 'connected_application'; name: string; issueId: string } | { kind: 'demo_harness' };
+  snapshot?: EvidenceSnapshot;
+  investigation?: Investigation;
   runId: string;
   variant?: ScenarioVariant;
   exercise?: 'none' | 'provider_outage';

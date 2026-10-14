@@ -1,0 +1,26 @@
+# Single-host pilot with evidence on a persistent volume. Supply distinct role secrets in the shell.
+# Run from the repository root: docker compose -f deploy/compose.pilot.yml up --build
+services:
+  twinops:
+    build:
+      context: ..
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      TWINOPS_REQUIRE_AUTH: "true"
+      TWINOPS_VIEWER_TOKEN: ${TWINOPS_VIEWER_TOKEN:?Provide a viewer secret}
+      TWINOPS_INVESTIGATOR_TOKEN: ${TWINOPS_INVESTIGATOR_TOKEN:?Provide an investigator secret}
+      TWINOPS_OPERATOR_TOKEN: ${TWINOPS_OPERATOR_TOKEN:?Provide an approver secret}
+      TWINOPS_APPLY_ENABLED: ${TWINOPS_APPLY_ENABLED:-false}
+      TWINOPS_POSTCHECK_SAMPLES: "3"
+      TWINOPS_POSTCHECK_INTERVAL_S: "2"
+      TWINOPS_PLANNER: "runbook"
+      TWINOPS_TWIN: "model"
+      TWINOPS_DATA_DIR: "/app/data"
+    volumes:
+      - evidence:/app/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  evidence:

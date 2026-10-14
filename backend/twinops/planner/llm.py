@@ -126,7 +126,7 @@ class LLMPlanner:
 
     async def diagnose(self, obs: dict[str, Any], topo: dict[str, Any], port: DiagnosticPort, guarded_logs: list[dict[str, Any]]):  # noqa: ANN201
         wrong = [p for p in obs["probes"] if p["kind"] == "journey" and p.get("failure") == "wrong_address"]
-        diagnostics = [port.direct_ip(p["id"]) for p in wrong]
+        diagnostics = port.results() if hasattr(port, "results") else [port.direct_ip(p["id"]) for p in wrong]
         known = _evidence_ids(obs, diagnostics, guarded_logs)
         node_ids = [n["id"] for n in topo["nodes"]]
         schema = {"type": "object", "properties": {"hypotheses": {"type": "array", "minItems": 1, "maxItems": 3, "items": {

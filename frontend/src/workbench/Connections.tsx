@@ -1,13 +1,10 @@
-import { useEffect, useState } from 'react';
 import { ArrowUpRight, Radio, Server, ShieldCheck } from 'lucide-react';
 import { SiteHeader } from '../components/SiteHeader.tsx';
 import { StatusChip, type ChipTone } from '../components/StatusChip.tsx';
 import { Link } from '../lib/router.tsx';
 import '../styles/connections.css';
-
-interface Issue { id: string; title: string; status: string; incidentId: string | null; detectedAt: number; resolvedAt?: number; failedJourneys?: string[]; investigationStatus?: string }
-interface Journey { id: string; label: string; ok: boolean }
-interface Connection { configured: boolean; connected: boolean; ready?: boolean; name?: string; detail?: string; url?: string; checkedAt?: number; recoveryRequired?: boolean; operation?: string | null; journeys?: Journey[]; issues: Issue[] }
+import { useConnection } from './useConnection.ts';
+import type { ConnectionIssue as Issue } from '../api/live.ts';
 
 const duration = (seconds: number) => {
   const s = Math.max(0, Math.round(seconds));
@@ -27,24 +24,7 @@ function issueState(issue: Issue, current: boolean, operation?: string | null): 
 }
 
 export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light'; onToggleTheme: () => void }) {
-  const [connection, setConnection] = useState<Connection>();
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const controller = new AbortController();
-    async function poll() {
-      try {
-        const response = await fetch('/api/connections', { signal: controller.signal });
-        if (!response.ok) throw new Error('TwinOps backend is unavailable');
-        const data = await response.json() as Connection;
-        if (!stopped) { setConnection(data); setError(''); }
-      } catch { if (!stopped) setError('Connection to TwinOps lost. Retrying automatically…'); }
-      if (!stopped) timer = setTimeout(poll, 3000);
-    }
-    void poll();
-    return () => { stopped = true; clearTimeout(timer); controller.abort(); };
-  }, []);
+  const { connection, error } = useConnection();
   const live = !error && connection?.connected && connection.ready;
   const loading = !connection && !error;
   const journeys = live ? connection.journeys ?? [] : [];
@@ -53,9 +33,8 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
   return <div className="connections-page">
     <SiteHeader variant="app" theme={theme} onToggleTheme={onToggleTheme} />
     <main id="main" className="connections-main" tabIndex={-1}>
-      <p className="eyebrow">Connected applications</p>
-      <h1>Observe the issue.<br /><span className="grad-text">Prove the recovery.</span></h1>
-      <p className="connections-lede">Your applications own their live state. TwinOps investigates new issues, tests fixes in an isolated twin and brings you the evidence for approval.</p>
+      <h1>Connected applications</h1>
+      <p className="connections-lede">Monitor application health and open an investigation. Use the workbench to run a lab exercise and review tested repairs.</p>
       {error && <p role="alert" className="connection-alert">{error}</p>}
       <section className="connection-card" aria-label="Metro Network connection">
         <div className="connection-app-icon" aria-hidden="true"><Server size={30} /></div>
@@ -64,6 +43,7 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
         </div>
         <div className="connection-card-actions">
           <StatusChip tone={loading ? 'pending' : live ? 'ok' : connection?.configured === false ? 'skip' : 'warn'}>{loading ? 'Connecting…' : live ? 'Monitoring' : connection?.configured === false ? 'Not configured' : 'Unavailable'}</StatusChip>
+          <Link className="btn btn-primary btn-sm" to="/workbench">Open workbench <ArrowUpRight size={15} aria-hidden="true" /></Link>
           {connection?.url && <a className="btn btn-ghost btn-sm" href={connection.url} target="_blank" rel="noreferrer">Open application <ArrowUpRight size={15} aria-hidden="true" /></a>}
         </div>
         {!!journeys.length && <ul className="journey-health" aria-label="Live service journeys">
@@ -75,7 +55,7 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
       {connection?.recoveryRequired && <p role="alert" className="connection-alert">The network requires operator recovery. Further changes are blocked.</p>}
       <div className="connections-explainer"><span><Radio size={17} aria-hidden="true" /> Automatic issue detection</span><span><Server size={17} aria-hidden="true" /> Isolated Containerlab twin</span><span><ShieldCheck size={17} aria-hidden="true" /> Approval before live changes</span></div>
       <section className="connected-issues"><div className="connected-section-heading"><h2>Detected incidents</h2><span>{connection?.issues.length ?? 0} recorded</span></div>
-        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : 'Waiting for the network application'}</h3><p>Introduce a fault in Metro Network. TwinOps will detect it automatically and start gathering evidence here.</p></div> :
+        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : 'Waiting for the network application'}</h3><p>Open the workbench to see the network and inject a lab fault. TwinOps detects new issues automatically.</p></div> :
           connection.issues.map((issue, index) => {
             const state = issueState(issue, index === 0, connection.operation);
             const active = !['resolved', 'reset'].includes(issue.status);

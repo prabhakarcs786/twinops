@@ -47,6 +47,12 @@ class DeviceDouble(LabDemoNetwork):
         j = next(j for j in self.topo['journeys'] if j['id'] == journey_id)
         return probe_journey(self._declared, self.topo, j, family=family)
 
+    async def diagnostic(self, kind, journey_id):
+        from twinops.harness import ModelDemoNetwork
+        model = ModelDemoNetwork(self.topo, 7)
+        model._state = copy.deepcopy(self._declared)
+        return await model.diagnostic(kind, journey_id)
+
     async def apply_approved(self, change, token):
         previous = copy.deepcopy(self._declared)
         self._declared = apply_change_set(previous, change, self.topo)
@@ -68,6 +74,33 @@ def fixture(tmp_path):
     app = create_network_app(settings, state)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1:8010', headers={'Authorization': 'Bearer test-connector'})
     return settings, network, state, client
+
+
+def test_exercise_availability_stays_stable_during_read_only_monitoring(tmp_path):
+    async def run():
+        _, _, state, client = fixture(tmp_path)
+        async with client:
+            await state.refresh()
+            idle = {'canInject': True, 'canReset': False}
+            assert state.dashboard()['exercise'] == idle
+            # Monitoring holds the same device lock as writes, but is not an operator operation.
+            async with state.lock:
+                assert (await client.get('/api/dashboard')).json()['exercise'] == idle
+            state.issue = {'id': 'previous', 'status': 'resolved', 'incidentId': 'inc-previous', 'investigationStatus': 'finished'}
+            async with state.lock:
+                assert (await client.get('/api/connector')).json()['exercise'] == {'canInject': True, 'canReset': True}
+                with state.busy('reset', 'Restoring and verifying the healthy baseline'):
+                    assert state.dashboard()['exercise'] == {'canInject': False, 'canReset': False}
+            state.issue['investigationStatus'] = 'investigating'
+            assert state.dashboard()['exercise'] == {'canInject': False, 'canReset': False}
+            state.issue['investigationStatus'] = 'finished'
+            for status in ('applying', 'restoring'):
+                state.operation = {'status': status}
+                assert state.dashboard()['exercise'] == {'canInject': False, 'canReset': False}
+            state.operation = None
+            state.recovery = True
+            assert state.dashboard()['exercise'] == {'canInject': False, 'canReset': False}
+    asyncio.run(run())
 
 
 def test_network_auth_origin_and_detection(tmp_path):
@@ -374,4 +407,94 @@ def test_in_flight_fault_shows_progress_not_recovery(tmp_path):
         assert seen['connector']['recoveryRequired']
         assert state.dashboard()['activity'] is None and not state.recovery
         assert [p['failure'] for p in state.dashboard()['proof']['during']['journeys'] if not p['ok']]
+    asyncio.run(run())
+
+
+def test_monitoring_tracks_impact_and_exports_metrics(tmp_path):
+    async def run():
+        _, _, state, client = fixture(tmp_path)
+        async with client:
+            body = await prepare_apply(state, client)
+            data = (await client.get('/api/dashboard')).json()
+            assert 'alarms' not in data
+            assert data['impact']['customers'] == 1840 + 940
+            assert state.issue['peakCustomers'] == 2780
+            assert len(data['telemetry']) >= 2 and None in data['telemetry'][-1]['j'].values()
+            kinds = [e['kind'] for e in data['proof']['timeline']]
+            assert kinds == ['fault', 'detected', 'claimed']
+            metrics = (await client.get('/metrics')).text
+            assert 'metro_journey_up{journey="J1",pop="BER",host="svc.demo"} 0' in metrics
+            assert 'metro_customers_affected 2780' in metrics and 'metro_incident_open 1' in metrics
+            assert 'metro_alarms' not in metrics
+            assert (await client.post('/api/apply', json=body)).status_code == 200
+            await state.refresh()
+            data = (await client.get('/api/dashboard')).json()
+            assert data['impact']['customers'] == 0
+            assert 'metro_incident_open 0' in (await client.get('/metrics')).text
+    asyncio.run(run())
+
+
+def test_workbench_exercises_preserve_network_guards_and_observation_boundary(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from twinops.api import create_app
+
+    async def run():
+        settings, network, state, remote = fixture(tmp_path)
+        settings = replace(settings, require_auth=True, postcheck_interval_s=0)
+        monkeypatch.setenv('TWINOPS_VIEWER_TOKEN', 'viewer-test')
+        monkeypatch.setenv('TWINOPS_INVESTIGATOR_TOKEN', 'investigator-test')
+        monkeypatch.setenv('TWINOPS_OPERATOR_TOKEN', 'approver-test')
+        monkeypatch.setattr('twinops.lab.backend.EmulatedTwin', lambda _: ModelTwin())
+        monkeypatch.setattr('twinops.network_app.LabDemoNetwork', lambda *_: DeviceDouble())
+        monkeypatch.setattr('twinops.network_connector.twin_status', AsyncMock(return_value={'ready': True, 'detail': 'test twin'}))
+        app = create_app(settings)
+        monitor, registry = app.state.monitor, app.state.registry
+        await monitor.client.client.aclose()
+        monitor.client.client = remote
+        try:
+            await state.refresh()
+            await monitor.tick()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as api:
+                viewer = {'Authorization': 'Bearer viewer-test'}
+                investigator = {'Authorization': 'Bearer investigator-test'}
+                payload = (await api.get('/api/connections', headers=viewer)).json()
+                assert payload['topology'] == state.topo
+                assert len(payload['probes']) == len(state.topo['journeys'])
+                assert all(p['ok'] for p in payload['probes'])
+                assert payload['exercise']['canInject']
+                assert not payload['exercise']['canReset']
+                assert not {'proof', 'verify', 'fault'} & payload.keys()
+                endpoint = '/api/connections/network/fault'
+                assert (await api.post(endpoint, json={'fault': 'dns_failure'})).status_code == 401
+                assert (await api.post(endpoint, json={'fault': 'dns_failure'}, headers=viewer)).status_code == 403
+                assert not network.writes
+                assert (await api.post(endpoint, json={'fault': 'unknown'}, headers=investigator)).status_code == 422
+                created = await api.post(endpoint, json={'fault': 'dns_failure'}, headers=investigator)
+                assert created.status_code == 202, created.text
+                assert not created.json()['exercise']['canInject']
+                assert len([w for w in network.writes if w['actor'] == 'harness']) == 1
+                assert not {'proof', 'verify', 'fault'} & created.json().keys()
+                await monitor.tick()
+                live = next(iter(registry.incidents.values()))
+                assert live.session.sealed_fault == 'external'
+                assert monitor.status['issues'][0]['incidentId'] == live.session.incident_id
+                await live.task
+                assert live.session.status == 'awaiting_approval', live.error
+                assert network.applies == 0
+                assert (await api.post(endpoint, json={'fault': 'cert_expiry'}, headers=investigator)).status_code == 409
+                reset = '/api/connections/network/reset'
+                assert (await api.post(reset, json={}, headers=viewer)).status_code == 403
+                assert (await api.post(reset, json={}, headers=investigator)).status_code == 409
+                await registry.decide(live, 'reviewer', 'Reject before reset', 'reject')
+                response = await api.post(reset, json={}, headers=investigator)
+                assert response.status_code == 200, response.text
+                assert all(p['ok'] for p in response.json()['probes'])
+                assert response.json()['exercise']['canInject']
+                state.quarantine('Test interrupted operation')
+                assert (await api.post(endpoint, json={'fault': 'dns_failure'}, headers=investigator)).status_code == 409
+                assert (await api.post(reset, json={}, headers=investigator)).status_code == 409
+        finally:
+            await registry.shutdown()
+            await monitor.close()
     asyncio.run(run())

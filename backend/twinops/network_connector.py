@@ -63,6 +63,15 @@ class RemoteNetwork:
         self.writes = result['writes']
         return result['state']
 
+    async def capture_evidence(self):
+        result = await self.client.call('/api/evidence')
+        self.writes = result['writes']
+        return result
+
+    async def diagnostic(self, kind: str, journey_id: str):
+        from urllib.parse import quote
+        return await self.client.call(f'/api/diagnostics/{quote(journey_id, safe="")}/{quote(kind, safe="")}')
+
     async def state_hash(self):
         result = await self.client.call('/api/snapshot')
         self.expected_hash = result['stateHash']
@@ -96,16 +105,24 @@ class NetworkMonitor:
         self.task: asyncio.Task | None = None
         self.status: dict[str, Any] = {'configured': True, 'connected': False, 'name': 'Metro Network', 'detail': 'Connecting to local application', 'issues': []}
 
-    async def tick(self):
-        remote = await self.client.call('/api/connector')
+    def update_status(self, remote: dict[str, Any]):
+        """Expose measured dashboard data, without the exercise referee's sealed evidence."""
         issue = remote.get('issue')
         probes = (remote.get('observation') or {}).get('probes', [])
         self.status.update(connected=True, ready=remote['ready'], detail=remote.get('error') or 'Automatic detection active · checked every 5 seconds',
                            url=self.registry.settings.network_url, checkedAt=remote.get('checkedAt'),
                            recoveryRequired=remote['recoveryRequired'] and not remote.get('activity'),
                            operation=remote.get('operation'),
+                           topology=remote['topology'], probes=[p for p in probes if p.get('kind') == 'journey'],
+                           alarmNodes=list({a['node'] for a in (remote.get('observation') or {}).get('alarms', [])}),
+                           activity=remote.get('activity'), exercise=remote.get('exercise'),
                            journeys=[{'id': p['id'], 'label': p['label'], 'ok': p['ok']} for p in probes if p.get('kind') == 'journey'],
                            issues=([issue] if issue else []) + list(reversed(remote.get('history', []))))
+
+    async def tick(self):
+        remote = await self.client.call('/api/connector')
+        self.update_status(remote)
+        issue = remote.get('issue')
         if not issue or not remote['ready'] or remote['recoveryRequired'] or issue['status'] == 'resolved':
             return
         iid = issue.get('incidentId') or f"inc-net-{issue['id']}"
@@ -128,6 +145,7 @@ class NetworkMonitor:
             self.status['detail'] = f"Not investigating yet: the twin lab is unavailable ({twin['detail']})"
             return
         await self.registry.create_external(self.client, issue, remote['topology'], iid)
+        self.status['issues'][0] = {**issue, 'incidentId': iid, 'investigationStatus': 'investigating'}
 
     async def run(self):
         while True:

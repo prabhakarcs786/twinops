@@ -14,6 +14,8 @@ from typing import Any
 from .config import Settings
 from .engine import new_incident_id, pick_fault
 from .harness import FAULT_INFO, VARIANTS, ModelDemoNetwork, ScenarioVariant
+from .lifecycle import TERMINAL, transition
+from .lifecycle import view as lifecycle_view
 from .memory import recall_candidates
 from .orchestrator import IncidentSession, decide, idle_frame, qa_context, run_incident
 from .planner.factory import build_planner
@@ -24,11 +26,26 @@ from .topology import build_topology
 from .twin import ModelTwin
 
 log = logging.getLogger("twinops")
-TERMINAL = {"closed", "escalated", "failed", "recovery_required"}
 
 
 class BusyError(RuntimeError):
     pass
+
+
+def _summary(record: dict[str, Any]) -> dict[str, Any]:
+    run = record["run"] or {}
+    change = (run.get("selected") or {}).get("change") or {}
+    journeys = [p for p in (run.get("observation") or {}).get("probes", []) if p["kind"] == "journey"]
+    at = {e["kind"]: e["at"] for e in record["events"]}
+    outcome = (record["outcome"] or {}).get("status")
+    return {"incidentId": record["id"], "createdAt": record["created"], "seed": record["seed"], "status": record["status"],
+            "pack": run.get("pack", record["topology"]["pack"]), "verdict": run.get("verdict"), "outcome": outcome,
+            "planner": run.get("planner"),
+            "cause": next((h["title"] for h in run.get("hypotheses") or []), None),
+            "fix": change.get("label", "").split(" · ", 1)[-1].removeprefix("Retest ") or None, "reused": change.get("origin") == "memory",
+            "affected": sum(1 for p in journeys if not p["ok"]), "journeys": len(journeys),
+            "verdictMs": at.get("gate_verdict") or at.get("escalated"),
+            "restoredMs": at.get("post_check") if outcome == "applied" else None}
 
 
 @dataclass
@@ -48,6 +65,9 @@ class LiveIncident:
             self.persist()
         async with self.changed:
             self.changed.notify_all()
+
+    def lifecycle(self) -> dict[str, Any]:
+        return lifecycle_view(self.session, archived=self.recovered)
 
     @property
     def finished(self) -> bool:
@@ -106,16 +126,15 @@ class Registry:
                             error=record["error"], recovered=True)
 
     def history(self) -> list[dict[str, Any]]:
-        return [{"incidentId": r["id"], "createdAt": r["created"], "seed": r["seed"], "status": r["status"],
-                 "pack": r["run"].get("pack", r["topology"]["pack"]), "verdict": r["run"].get("verdict"),
-                 "outcome": (r["outcome"] or {}).get("status"), "planner": r["run"].get("planner")}
-                for r in self.store.recent()]
+        return [_summary(r) for r in self.store.recent()]
 
     def active(self) -> int:
-        return sum(1 for i in self.incidents.values() if i.session.status == "running")
+        return sum(1 for i in self.incidents.values() if not i.finished)
 
     async def _backends(self, topo: dict[str, Any], seed: int, variant: ScenarioVariant = "standard") -> tuple[Any, Any]:
         if self.settings.twin == "emulated":
+            if topo["pack"] == "branch":
+                raise ValueError("The branch topology requires the model adapter; the current lab has eight devices")
             from .lab.backend import lab_backends
 
             if self.store.needs_recovery():
@@ -149,7 +168,8 @@ class Registry:
         demo, twin = await self._backends(topo, seed, variant)
         planner = build_planner("llm", settings=self.settings, client=OutageClient()) if simulate_outage else build_planner(settings=self.settings)
         session = IncidentSession(incident_id=new_incident_id(), sealed_fault=pick_fault(fault, seed), demo=demo, twin=twin,
-                      planner=planner, pace=pace, exercise="provider_outage" if simulate_outage else "none")
+                      planner=planner, pace=pace, exercise="provider_outage" if simulate_outage else "none", apply_enabled=bool(self.settings.apply_enabled), apply_policy=self.settings.allows_apply,
+                      postcheck_samples=self.settings.postcheck_samples, postcheck_interval_s=self.settings.postcheck_interval_s)
         if use_memory:
             session.recall = lambda observation: recall_candidates(self.store.recent(), observation, topo, twin.backend, twin.supported_actions)
         live = LiveIncident(session=session, topo=topo, seed=seed)
@@ -174,7 +194,8 @@ class Registry:
             await client.call(f"/api/issues/{issue['id']}/claim", {"incidentId": incident_id})
             demo = RemoteNetwork(client, issue['id'], incident_id)
             twin = EmulatedTwin(LabInstance('twin', runtime_dir(self.settings), topo, DockerRunner()))
-            session = IncidentSession(incident_id, 'external', demo, twin, planner, pace=0, external=True)
+            session = IncidentSession(incident_id, 'external', demo, twin, planner, pace=0, external=True, apply_enabled=bool(self.settings.apply_enabled), apply_policy=self.settings.allows_apply,
+                                      postcheck_samples=self.settings.postcheck_samples, postcheck_interval_s=self.settings.postcheck_interval_s)
             session.recall = lambda observation: recall_candidates(self.store.recent(), observation, topo, twin.backend, twin.supported_actions)
             live = LiveIncident(session=session, topo=topo, seed=7)
             live.persist = lambda: self._persist(live)
@@ -192,7 +213,7 @@ class Registry:
         except Exception as exc:  # noqa: BLE001 — a failed run must surface as INCONCLUSIVE, never as a green result
             log.exception("incident %s failed", live.session.incident_id)
             live.error = f"{type(exc).__name__}: {str(exc)[:200]}"
-            live.session.status = "failed"
+            transition(live.session, "failed")
             prior = live.session.events[-1] if live.session.events else None
             live.session.events.append({
                 "seq": (prior["seq"] + 1) if prior else 1, "at": prior["at"] if prior else 0, "kind": "run_failed", "phase": prior["phase"] if prior else "break",
@@ -212,7 +233,7 @@ class Registry:
         """An unanswered approval expires so the lab is not held forever; nothing is applied."""
         if live.session.status != "awaiting_approval":
             return
-        live.session.status = "closed"
+        transition(live.session, "closed")
         live.session.outcome = {"status": "expired", "reason": "approval window expired — nothing applied", "postChecks": []}
         await self._close_backends(live)
         await live.notify()
@@ -229,7 +250,7 @@ class Registry:
     async def decide(self, live: LiveIncident, operator: str, comment: str, decision: str) -> None:
         if live.recovered or live.session.status != "awaiting_approval":
             raise ValueError(f"incident is {live.session.status}, not awaiting approval")
-        live.session.status = "applying"
+        transition(live.session, "applying")
         try:
             await live.notify()
             await decide(live.session, operator, comment, decision, emit=live.notify)
@@ -237,7 +258,7 @@ class Registry:
             # Cancellation and event/storage failures may escape the apply gateway.
             # Keep the target quarantined until an operator establishes its state.
             if live.session.status == "applying":
-                live.session.status = "recovery_required"
+                transition(live.session, "recovery_required")
                 live.session.outcome = {"status": "recovery_required", "reason": "Apply interrupted; target state could not be verified. Operator recovery required.", "postChecks": []}
                 prior = live.session.events[-1]
                 live.session.events.append({"seq": prior["seq"] + 1, "at": prior["at"], "kind": "recovery_required", "phase": "apply",
@@ -268,7 +289,7 @@ class Registry:
             raise ValueError("questions open once the verdict is in")
         return await planner.answer(question, qa_context(live.session.run, live.session.outcome))
 
-    def start_review(self, live: LiveIncident, candidate_id: str, mode: str) -> dict[str, Any]:
+    def start_review(self, live: LiveIncident, candidate_id: str, mode: str, assignment_id: str | None = None) -> dict[str, Any]:
         if not live.session.run:
             raise ValueError("review trials open after the verdict")
         candidate = next((candidate for candidate in live.session.run["candidates"] if candidate["change"]["id"] == candidate_id), None)
@@ -279,7 +300,7 @@ class Registry:
             "changeHash": candidate["change"]["hash"], "snapshotHash": live.session.run["snapshotHash"],
             "versions": live.session.run["versions"], "mode": mode,
             "expectedDecision": "accept" if candidate["decision"] in ("pass", "pass_with_warnings") else "reject",
-        })
+        }, assignment_id)
 
     def reveal(self, live: LiveIncident) -> dict[str, str]:
         if live.session.status == "running":
@@ -308,5 +329,5 @@ class Registry:
         for live in self.incidents.values():
             if not live.finished:
                 if live.session.status == 'applying':
-                    live.session.status = 'recovery_required'
+                    transition(live.session, 'recovery_required')
                 await self._close_backends(live)

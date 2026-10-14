@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-Pack = Literal["core", "enterprise"]
+Pack = Literal["core", "enterprise", "branch"]
 Topology = dict[str, Any]
 
 SERVICE_IPS = {"svc.demo": "10.40.0.10", "api.demo": "10.40.0.11"}
@@ -34,6 +34,8 @@ PACKS: dict[str, dict[str, Any]] = {
     },
 }
 
+PACKS["branch"] = {"name": "Branch transit topology (synthetic)", "pops": PACKS["core"]["pops"]}
+
 
 def build_topology(pack: str) -> Topology:
     p0, p1, p2, p3 = PACKS[pack]["pops"]
@@ -51,7 +53,7 @@ def build_topology(pack: str) -> Topology:
         {"id": "GW-1", "label": "TLS gateway GW-1", "short": "GW-1", "role": "gateway", "x": 404, "y": 168},
         {"id": "SVC-1", "label": "Service SVC-1", "short": "SVC-1", "role": "service", "x": 508, "y": 168},
     ]
-    return {
+    topology = {
         "pack": pack,
         "name": PACKS[pack]["name"],
         "version": f"topo-{pack}-1.0.0",
@@ -76,6 +78,13 @@ def build_topology(pack: str) -> Topology:
             {"id": "J4", "label": f"{p3['short']} customers → api.demo", "from": p3["id"], "host": "api.demo"},
         ],
     }
+    if pack == "branch":
+        topology["nodes"].append(pop({"id": "BRANCH", "label": "Branch office", "short": "BR"}, 150, 310, 24))
+        topology["links"] = [link for link in topology["links"] if link["id"] != "L1"]
+        topology["links"].append({"id": "L12", "a": "BRANCH", "b": p1["id"], "latencyMs": 3})
+        topology["links"].append({"id": "L13", "a": p0["id"], "b": p1["id"], "latencyMs": 6})
+        topology["journeys"].append({"id": "J5", "label": "Branch customers → svc.demo", "from": "BRANCH", "host": "svc.demo"})
+    return topology
 
 
 def pops(topo: Topology) -> list[dict[str, Any]]:

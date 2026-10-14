@@ -16,6 +16,12 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
     failing = [p for p in run["observation"]["probes"] if p["kind"] == "journey" and not p["ok"]]
     return {
         "incident_id": run["runId"],
+        "schema_version": "proof-pack-1",
+        "snapshot": run.get("snapshot"),
+        "investigation": run.get("investigation"),
+        "diagnostics": run.get("diagnostics", []),
+        "evidence_sources": [p for key in ("probes", "alarms", "logs", "changes") for p in run["observation"].get(key, [])],
+        "twin_coverage": run["reproduction"].get("coverage"),
         "source": run.get("source", {"kind": "demo_harness"}),
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "verdict": VERDICT_LABEL[run["verdict"]],
@@ -50,7 +56,7 @@ def build_proof_pack(session: IncidentSession) -> dict[str, Any]:
             "steps": [describe_step(s) for s in c["change"]["steps"]], "change_hash": c["change"]["hash"], "restored": c["restored"],
             "latency_delta_ms": c["latencyDeltaMs"], "decision": c["decision"],
             "gates": {g["id"]: f"{g['status']}: {g['reason']}" for g in c["gates"]},
-            "challenges": [{"challenge": ch["label"], "ok": ch["ok"], "soft": ch["soft"], "detail": ch["detail"]} for ch in c["challenges"]],
+            "challenges": [{"challenge": ch["label"], "ok": ch["ok"], "soft": ch["soft"], "detail": ch["detail"], "provenance": ch.get("provenance")} for ch in c["challenges"]],
             "diff": c["diff"],
         } for c in run["candidates"]],
         "selected": {"id": run["selected"]["change"]["id"], "label": run["selected"]["change"]["label"], "change_hash": run["selected"]["change"]["hash"],
@@ -86,6 +92,8 @@ td,th{{border:1px solid #ccd;padding:6px;vertical-align:top;text-align:left}}.no
 <h1>TwinOps Proof Pack</h1><p>{e(pack['incident_id'])} · generated {e(pack['generated_at'])} · seed {e(str(pack['seed']))}</p>
 <p class="v">{e(pack['verdict'])}</p><p class="note">{e(pack['scope_note'])}</p>
 <h2>Mode</h2><p>{e(pack['mode'])}</p>{pre(pack['versions'])}<p>Captured state <code>{e(pack['captured_state_hash'])}</code></p>
+<h2>Evidence provenance and freshness</h2>{pre(pack.get('snapshot'))}{pre(pack.get('evidence_sources', []))}
+<h2>Investigation and twin coverage</h2>{pre(pack.get('investigation'))}{pre(pack.get('twin_coverage'))}
 <p>Scenario: {e(pack.get('scenario_variant', 'standard'))} · exercise: {e(pack.get('exercise', 'none'))}</p>
 {f"<h2>Historical fix provenance (fresh tests required)</h2>{pre(pack['incident_memory'])}" if pack.get('incident_memory') else ''}
 {f"<h2>Approver briefing (AI-drafted, non-authoritative)</h2><p>{e(narrative.get('summary', ''))}</p>" if narrative else ''}

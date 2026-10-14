@@ -7,6 +7,7 @@ import contextlib
 import hmac
 import json
 import time
+import httpx
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .access import AccessPolicy
 from .config import Settings
 from .harness import ALL_FAULTS, FAULT_INFO, SUPPORTED_FAULTS, VARIANTS, ScenarioVariant
 from .planner.llm_client import LLMError
@@ -31,7 +33,7 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 
 class IncidentRequest(BaseModel):
-    pack: Literal["core", "enterprise"] = "core"
+    pack: Literal["core", "enterprise", "branch"] = "core"
     fault: FaultChoice = "random"
     seed: int | None = Field(default=None, ge=0, le=1_000_000)
     pace: float = Field(default=1.0, ge=0, le=8)
@@ -47,13 +49,22 @@ class DecisionRequest(BaseModel):
     comment: str = Field(default="", max_length=500)
 
 
+class NetworkFaultRequest(BaseModel):
+    fault: Literal['route_misconfig', 'dns_failure', 'cert_expiry', 'unsupported_link_flap']
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=400)
+
+
+class LoginRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=1024)
 
 
 class ReviewRequest(BaseModel):
     candidateId: str = Field(min_length=1, max_length=64)
     mode: Literal["raw", "proof"]
+    assignmentId: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class ReviewDecision(BaseModel):
@@ -79,6 +90,7 @@ class RateLimiter:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     registry = Registry(settings)
+    access = AccessPolicy(settings.require_auth, settings.cors_origins)
     from .network_connector import NetworkMonitor
     monitor = NetworkMonitor(registry) if settings.network_url else None
     limiter = RateLimiter(settings.rate_limit_per_min)
@@ -98,7 +110,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="TwinOps", version=__version__, docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None, lifespan=lifespan)
     app.state.registry = registry
-    app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID"])
+    app.state.monitor = monitor
+    app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_credentials=True,
+                       allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID"])
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):  # noqa: ANN001, ANN202
@@ -119,7 +133,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "unknown incident")
         return live
 
-    def operator_auth(authorization: str | None = Header(default=None)) -> None:
+    @app.middleware("http")
+    async def access_control(request: Request, call_next):
+        denied = access.authorize(request)
+        return denied if denied is not None else await call_next(request)
+
+    @app.post("/api/auth/session")
+    async def login(body: LoginRequest, request: Request):
+        limiter.check(request.client.host if request.client else "unknown")
+        session = access.login(body.token)
+        if not session:
+            raise HTTPException(401, "Invalid access token")
+        sid, role = session
+        response = JSONResponse({"role": role})
+        response.set_cookie("twinops_session", sid, max_age=3600, httponly=True, secure=settings.secure_cookies, samesite="strict")
+        return response
+
+    @app.get("/api/auth/me")
+    async def me(request: Request):
+        return {"role": access.role(request), "required": settings.require_auth}
+
+    def operator_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
+        if settings.require_auth and getattr(request.state, "role", None) == "approver":
+            return
         token = settings.operator_token
         if token is None:
             return
@@ -141,7 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     @app.get("/api/config")
-    async def config() -> dict[str, Any]:
+    async def config(request: Request) -> dict[str, Any]:
         twin: dict[str, Any] = {"backend": settings.twin, "ready": True, "detail": "in-process model twin"}
         if settings.twin == "emulated":
             from .lab.backend import lab_status
@@ -153,11 +189,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "twin": twin,
             "packs": [{"id": k, "name": v["name"]} for k, v in PACKS.items()],
             "faults": [{"id": f, **FAULT_INFO[f], "supported": f in SUPPORTED_FAULTS} for f in ALL_FAULTS],
-            "approvalAuth": settings.operator_token is not None,
+            "approvalAuth": settings.operator_token is not None and not settings.require_auth,
+            "authenticationRequired": settings.require_auth,
+            "role": access.role(request) if settings.require_auth else None,
             "harness": settings.harness_enabled and not settings.network_url,
             "connectedApplication": bool(settings.network_url),
             "networkUrl": settings.network_url or None,
             "activeRuns": registry.active(),
+            "contractVersion": "incident-1", "applyEnabled": settings.allows_apply(),
             "variants": [{"id": variant, "label": label} for variant, label in VARIANTS.items()]
             if settings.harness_enabled and settings.twin == "model" else [],
         }
@@ -165,6 +204,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get('/api/connections')
     async def connections() -> dict[str, Any]:
         return monitor.status if monitor else {'configured': False, 'connected': False, 'issues': []}
+
+    async def network_exercise(path: str, body: dict, request: Request) -> dict[str, Any]:
+        # Operator exercise controls use Metro's existing guarded endpoints. The
+        # planner still receives only observed symptoms through the connector.
+        limiter.check(request.client.host if request.client else 'unknown')
+        if not monitor:
+            raise HTTPException(409, 'No network application is connected')
+        try:
+            await monitor.client.call(path, body)
+            monitor.update_status(await monitor.client.call('/api/connector'))
+        except httpx.HTTPStatusError as exc:
+            try:
+                detail = exc.response.json().get('detail', 'Network exercise was refused')
+            except ValueError:
+                detail = 'Network exercise was refused'
+            raise HTTPException(exc.response.status_code, detail) from exc
+        except httpx.RequestError as exc:
+            raise HTTPException(503, 'Network application did not respond. Check its status before retrying the exercise.') from exc
+        return monitor.status
+
+    @app.post('/api/connections/network/fault', status_code=202)
+    async def network_fault(body: NetworkFaultRequest, request: Request):
+        return await network_exercise('/api/faults', {'fault': body.fault}, request)
+
+    @app.post('/api/connections/network/reset')
+    async def network_reset(request: Request):
+        return await network_exercise('/api/reset', {}, request)
 
     @app.post("/api/incidents", status_code=202)
     async def create_incident(body: IncidentRequest, request: Request) -> dict[str, Any]:
@@ -184,7 +250,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         s = live.session
         return {"incidentId": s.incident_id, "status": s.status, "seed": live.seed, "run": s.run or None, "approval": s.approval, "outcome": s.outcome,
                 "narrative": s.narrative, "events": len(s.events), "error": live.error, "createdAt": live.created, "recovered": live.recovered,
-                "pack": live.topo["pack"]}
+                "pack": live.topo["pack"], "topology": live.topo, "lifecycle": live.lifecycle()}
 
     @app.get("/api/incidents")
     async def incident_history() -> list[dict[str, Any]]:
@@ -273,7 +339,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, "demo review trials disabled")
         review_limiter.check(request.client.host if request.client else "unknown")
         try:
-            return registry.start_review(get_live(incident_id), body.candidateId, body.mode)
+            return registry.start_review(get_live(incident_id), body.candidateId, body.mode, body.assignmentId)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 

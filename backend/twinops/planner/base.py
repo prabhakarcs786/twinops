@@ -31,6 +31,7 @@ def guard_untrusted(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 class DiagnosticPort(Protocol):
     def direct_ip(self, journey_id: str) -> dict[str, Any]: ...
+    def results(self) -> list[dict[str, Any]]: ...
 
 
 class Planner(Protocol):

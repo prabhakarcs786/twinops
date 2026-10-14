@@ -34,11 +34,21 @@ const PACKS: Record<PackId, { name: string; pops: [PopLabel, PopLabel, PopLabel,
       { id: 'DC', label: 'Data centre', short: 'DC' },
     ],
   },
+  branch: {
+    name: 'Branch transit topology (synthetic)',
+    pops: [
+      { id: 'BER', label: 'Berlin PoP', short: 'BER' },
+      { id: 'MUC', label: 'Munich PoP', short: 'MUC' },
+      { id: 'HAM', label: 'Hamburg PoP', short: 'HAM' },
+      { id: 'FRA', label: 'Frankfurt PoP', short: 'FRA' },
+    ],
+  },
 };
 
 export const PACK_OPTIONS: { id: PackId; name: string }[] = [
   { id: 'core', name: PACKS.core.name },
   { id: 'enterprise', name: PACKS.enterprise.name },
+  { id: 'branch', name: PACKS.branch.name },
 ];
 
 /**
@@ -65,7 +75,7 @@ export function buildTopology(pack: PackId): Topology {
     { id: 'GW-1', label: 'TLS gateway GW-1', short: 'GW-1', role: 'gateway', x: 404, y: 168 },
     { id: 'SVC-1', label: 'Service SVC-1', short: 'SVC-1', role: 'service', x: 508, y: 168 },
   ];
-  return {
+  const topology: Topology = {
     pack,
     name: PACKS[pack].name,
     version: `topo-${pack}-1.0.0`,
@@ -90,6 +100,33 @@ export function buildTopology(pack: PackId): Topology {
       { id: 'J4', label: `${p3.short} customers → api.demo`, from: p3.id, host: 'api.demo' },
     ],
   };
+  if (pack === 'branch') {
+    topology.nodes.push(pop({ id: 'BRANCH', label: 'Branch office', short: 'BR' }, 150, 310, 24));
+    topology.links = topology.links.filter((link) => link.id !== 'L1');
+    topology.links.push({ id: 'L12', a: 'BRANCH', b: p1.id, latencyMs: 3 });
+    topology.links.push({ id: 'L13', a: p0.id, b: p1.id, latencyMs: 6 });
+    topology.journeys.push({ id: 'J5', label: 'Branch customers → svc.demo', from: 'BRANCH', host: 'svc.demo' });
+  }
+  return topology;
+}
+
+export function pathBetween(topo: Topology, start: string, end: string, excluded: string[] = []): string[] {
+  const queue = [{ cost: 0, path: [start] }];
+  const visited = new Set(excluded);
+  while (queue.length) {
+    queue.sort((a, b) => a.cost - b.cost);
+    const { cost, path } = queue.shift()!;
+    const node = path.at(-1)!;
+    if (visited.has(node)) continue;
+    if (node === end) return path;
+    visited.add(node);
+    for (const link of topo.links) {
+      if (link.backup) continue;
+      const other = link.a === node ? link.b : link.b === node ? link.a : null;
+      if (other && !visited.has(other)) queue.push({ cost: cost + link.latencyMs, path: [...path, other] });
+    }
+  }
+  return [];
 }
 
 export const pops = (topo: Topology) => topo.nodes.filter((n) => n.role === 'pop');

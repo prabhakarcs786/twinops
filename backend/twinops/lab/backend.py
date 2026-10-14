@@ -18,7 +18,7 @@ from .device import LabInstance, now_iso
 from .plan import INSTANCES, POPS, container
 from .runner import DockerRunner, LabError
 
-LAB_SUPPORTED_CHALLENGES = {"dual_stack", "secondary_failure", "warm_cache", "session_continuity"}
+LAB_SUPPORTED_CHALLENGES = {"dual_stack", "secondary_failure", "warm_cache", "session_continuity", "surge_x3"}
 
 
 def stable_hash(state: State) -> str:
@@ -111,6 +111,11 @@ class LabDemoNetwork:
         captured = await self.capture_supported()
         journey = next(j for j in self.topo["journeys"] if j["id"] == journey_id)
         return await self.inst.sample(captured, journey, family=family)
+
+    async def diagnostic(self, kind: str, journey_id: str) -> dict[str, Any]:
+        captured = await self.capture_supported()
+        journey = next(j for j in self.topo["journeys"] if j["id"] == journey_id)
+        return await self.inst.diagnostic(captured, journey, kind)
 
     async def simulate_drift(self) -> None:
         await self.inst.drift()
@@ -236,6 +241,14 @@ class EmulatedTwin:
                       for jid in ctx.affected_ids]
             failed = [p for p in probes if not p["ok"]]
             return result(not failed, f"clients behind the caching resolver still fail: {failed[0]['detail']}" if failed else "clients behind the caching resolver recover immediately", probes)
+        if kind == "surge_x3":
+            import asyncio
+            # sample() makes three requests; three simultaneous samples triple that probe workload.
+            probes = list(await asyncio.gather(*(self.inst.sample(after, journey, kind="challenge", probe_id=f"{journey['id']}-surge-{i}")
+                                                 for journey in ctx.journeys for i in range(3))))
+            baseline = {p["id"]: p.get("latencyMs", 0) for p in fixed}
+            failed = [p for p in probes if not p["ok"] or p.get("latencyMs", 0) > baseline.get(p["id"].split("-surge-")[0], 0) + self.latency_budget_ms]
+            return result(not failed, f"Tripled probe concurrency: nine HTTP attempts per journey; {len(failed)} failing or over-budget samples. This does not model production traffic volume.", probes)
         if kind == "session_continuity":
             return session_challenge(change)
         return result(False, f"{kind} is not executable on the emulated twin", [])

@@ -162,6 +162,28 @@ class ModelDemoNetwork:
     async def probe(self, journey_id: str, family: str) -> dict[str, Any]:
         return probe_journey(self._state, self.topo, journey_by_id(self.topo, journey_id), family=family, kind="journey")
 
+    async def diagnostic(self, kind: str, journey_id: str) -> dict[str, Any]:
+        from .model import filter_decision
+        from .topology import SERVICE_IPS, node_by_id
+
+        journey = journey_by_id(self.topo, journey_id)
+        state = clone(self._state)
+        host = journey["host"]
+        if kind in ("direct_ip", "tls_probe"):
+            state["clients"]["hosts"] = {host: SERVICE_IPS[host]}
+            if kind == "tls_probe":
+                state["b17"]["filterEnabled"] = False
+            return sample_journey(state, self.topo, journey)
+        if kind == "dns_lookup":
+            answer = state["dns"][state["dns"]["active"]].get(host)
+            return {"ok": answer == SERVICE_IPS[host], "path": [journey["from"], "DNS-1"],
+                    "detail": f"{host}: answer={answer}, expected={SERVICE_IPS[host]}, warm cache={state['dns']['cache'].get(host)}"}
+        if kind == "route_lookup":
+            node = node_by_id(self.topo, journey["from"])
+            decision = filter_decision(state["b17"], node["prefix"])
+            return {"ok": decision["action"] == "permit", "path": [node["id"], "B17"], "detail": f"Route policy for {node['prefix']}: {decision}"}
+        raise NotImplementedError(kind)
+
     async def simulate_drift(self) -> None:
         self._state["notes"]["B17.description"] = "core-b17 edge aggregation (edited during incident)"
         self._changes.append({"id": "r-2043", "node": "B17", "minutesAgo": 0, "author": "on-call", "summary": "Interface description edited during incident"})

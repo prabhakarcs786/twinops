@@ -48,20 +48,63 @@ function tracker(state) {
   }).join('')}</ol>`;
 }
 
+// Where a probe failure points in the topology, as a monitoring system would localise it.
+const LOCATE = {no_route: 'B17', wrong_address: 'DNS-1', tls_expired: 'GW-1', tls_name: 'GW-1', slo_breach: 'SVC-1'};
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function faultPoint(probe, journey) {
+  if (probe.failure === 'intermittent') return {node: journey.from, uplink: true};
+  return {node: LOCATE[probe.failure] ?? probe.failedAt ?? 'B17'};
+}
+
 function renderMap(data, journeys) {
   const topo = data.topology;
   if (!topo) return;
-  const failingPops = new Set(journeys.filter((p) => !p.ok).map((p) => topo.journeys.find((j) => j.id === p.id)?.from).filter(Boolean));
-  const servedPops = new Set(journeys.filter((p) => p.ok).map((p) => topo.journeys.find((j) => j.id === p.id)?.from).filter(Boolean));
   const at = Object.fromEntries(topo.nodes.map((n) => [n.id, n]));
-  const links = topo.links.map((l) => `<line class="link${l.backup ? ' backup' : ''}" x1="${at[l.a].x}" y1="${at[l.a].y}" x2="${at[l.b].x}" y2="${at[l.b].y}"/>`).join('');
+  const meta = Object.fromEntries(topo.journeys.map((j) => [j.id, j]));
+  const failingPops = new Set();
+  const servedPops = new Set();
+  const brokenLinks = new Set();
+  const faults = new Map();
+  const linkKey = (a, b) => [a, b].sort().join('|');
+  let flows = '';
+  journeys.forEach((probe, index) => {
+    const journey = meta[probe.id];
+    if (!journey) return;
+    const route = [journey.from, 'B17', 'GW-1', 'SVC-1'];
+    let reach = route;
+    if (probe.ok) servedPops.add(journey.from);
+    else {
+      failingPops.add(journey.from);
+      const point = faultPoint(probe, journey);
+      faults.set(point.node, FAILURE[probe.failure] ?? 'Failing');
+      // DNS sits beside the data path: customers are stopped at the core before ever reaching the gateway.
+      reach = point.uplink ? route.slice(0, 2) : point.node === 'DNS-1' ? [journey.from, 'B17', 'DNS-1'] : route.slice(0, Math.max(2, route.indexOf(point.node) + 1));
+      reach.slice(1).forEach((node, i) => brokenLinks.add(linkKey(reach[i], node)));
+    }
+    const d = `M${reach.map((id) => `${at[id].x} ${at[id].y}`).join(' L')}`;
+    const duration = probe.ok ? 3.2 : 2;
+    for (const offset of [0, duration / 2]) {
+      const begin = `${(offset + index * 0.3).toFixed(1)}s`;
+      const fade = probe.ok ? '' : `<animate attributeName="opacity" values="1;1;0" keyTimes="0;0.75;1" dur="${duration}s" begin="${begin}" repeatCount="indefinite"/>`;
+      flows += reduceMotion ? '' : `<circle class="packet ${probe.ok ? 'ok' : 'bad'}" r="3.2"><animateMotion dur="${duration}s" begin="${begin}" repeatCount="indefinite" path="${d}"/>${fade}</circle>`;
+    }
+  });
+  const links = topo.links.map((l) => `<line class="link${l.backup ? ' backup' : ''}${brokenLinks.has(linkKey(l.a, l.b)) ? ' broken' : ''}" x1="${at[l.a].x}" y1="${at[l.a].y}" x2="${at[l.b].x}" y2="${at[l.b].y}"/>`).join('');
   const nodes = topo.nodes.map((n) => {
-    const state = failingPops.has(n.id) ? ' bad' : servedPops.has(n.id) ? ' ok' : '';
+    const state = failingPops.has(n.id) ? ' bad' : servedPops.has(n.id) ? ' ok' : faults.has(n.id) ? ' fault' : '';
     return `<g class="node ${escape(n.role)}${state}"><rect x="${n.x - 27}" y="${n.y - 14}" width="54" height="28" rx="8"/><text x="${n.x}" y="${n.y + 4}">${escape(n.short)}</text></g>`;
   }).join('');
-  paint('map', links + nodes);
+  const marks = [...faults].map(([id, label]) => {
+    const n = at[id];
+    const pulse = reduceMotion ? '' : '<animate attributeName="r" values="20;30;20" dur="1.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.7;0;0.7" dur="1.8s" repeatCount="indefinite"/>';
+    const y = n.y > 70 ? n.y - 24 : n.y + 34;
+    return `<g class="fault-mark"><circle class="pulse" cx="${n.x}" cy="${n.y}" r="22">${pulse}</circle><text class="fault-label" x="${n.x}" y="${y}">${escape(label)}</text></g>`;
+  }).join('');
+  paint('map', links + flows + nodes + marks);
   const names = [...failingPops].map((id) => at[id]?.label ?? id);
-  $('map').setAttribute('aria-label', names.length ? `Network map: customers disrupted at ${names.join(', ')}` : 'Network map: all measured locations served');
+  const where = [...faults].map(([id, label]) => `${label} at ${at[id]?.label ?? id}`);
+  $('map').setAttribute('aria-label', names.length ? `Network map: customers disrupted at ${names.join(', ')}. ${where.join('; ')}.` : 'Network map: traffic flowing to every location');
 }
 
 function headline(data, issue, ok, total) {
@@ -240,6 +283,62 @@ function renderProof(data) {
   paint('verify', items.map((c, i) => `<div class="command"><p>${escape(c.label)}</p><div class="command-line"><code id="cmd-${i}">${escape(c.command)}</code><button type="button" class="button secondary copy" data-copy="cmd-${i}" aria-label="Copy command: ${escape(c.label)}">Copy</button></div></div>`).join(''));
 }
 
+const MARKER = {fault: 'Fault', detected: 'Detected', claimed: 'TwinOps on it', applied: 'Fix applied', recovered: 'Recovered', rolledback: 'Rolled back', reopened: 'Failing again'};
+
+function laneSummary(data) {
+  const issue = data.issue;
+  if (!issue) return 'All journeys healthy. Live probes run every 5 seconds.';
+  const faultAt = data.proof?.timeline.find((e) => e.kind === 'fault')?.at;
+  const detected = faultAt ? `detected ${duration(issue.detectedAt - faultAt)} after the fault` : null;
+  const lost = `${Math.round(issue.customerMinutes ?? 0).toLocaleString()} customer-minutes lost`;
+  if (issue.status !== 'resolved') return [`Incident open for ${duration(Date.now() / 1000 - issue.detectedAt)}`, detected, lost].filter(Boolean).join(' \u00b7 ');
+  return [`Restored in ${duration(issue.resolvedAt - issue.detectedAt)}`, detected, lost].filter(Boolean).join(' \u00b7 ');
+}
+
+// One lane per customer journey: the same live probe over time, with the incident steps marked on it.
+function renderLanes(data, journeys) {
+  const topo = data.topology;
+  if (!topo) return;
+  const span = data.window ?? 600;
+  const now = data.checkedAt ?? Date.now() / 1000;
+  const start = now - span;
+  const pos = (t) => Math.max(0, Math.min(1000, ((t - start) / span) * 1000));
+  const samples = (data.telemetry ?? []).filter((s) => s.t >= start - 15);
+  const events = (data.proof?.timeline ?? []).filter((e) => MARKER[e.kind] && e.at >= start);
+  const markers = [];
+  events.forEach((e, i) => {
+    const x = pos(e.at) / 10;
+    const last = markers.at(-1);
+    // Steps seconds apart (a fault and its detection) share one numbered marker.
+    if (last && x - last.x < 2.5) last.nums.push(i + 1);
+    else markers.push({x, nums: [i + 1]});
+  });
+  const lines = markers.map((m) => `<line class="marker" x1="${(m.x * 10).toFixed(1)}" x2="${(m.x * 10).toFixed(1)}" y1="0" y2="10" vector-effect="non-scaling-stroke"/>`).join('');
+  const current = Object.fromEntries(journeys.map((p) => [p.id, p]));
+  const rows = topo.journeys.map((journey) => {
+    const cells = [];
+    samples.forEach((s, i) => {
+      const value = s.j[journey.id];
+      const state = value === undefined ? 'na' : value === null ? 'bad' : 'ok';
+      const end = Math.min(samples[i + 1]?.t ?? now, s.t + 15);
+      const last = cells.at(-1);
+      if (last && last.state === state && s.t - last.end < 1) last.end = end;
+      else cells.push({state, start: s.t, end});
+    });
+    const rects = cells.map((c) => `<rect class="cell ${c.state}" x="${pos(c.start).toFixed(1)}" y="0" width="${Math.max(3, pos(c.end) - pos(c.start)).toFixed(1)}" height="10"/>`).join('');
+    const probe = current[journey.id];
+    const state = !probe ? '<span class="chip chip-na">no data</span>' : probe.ok ? `<span class="chip chip-ok">\u2713 ${escape(probe.latencyMs)} ms</span>` : `<span class="chip chip-bad">\u2717 ${escape(FAILURE[probe.failure] ?? 'Failed')}</span>`;
+    const people = data.impact?.byPop?.[journey.from];
+    return `<div class="lane"><div class="lane-label"><strong>${escape(journey.label)}</strong>${people ? `<small>${people.toLocaleString()} customers</small>` : ''}</div><svg class="lane-bar" viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true">${rects}${lines}</svg>${state}</div>`;
+  }).join('');
+  const labels = markers.map((m) => `<span class="marker-label${m.x < 3 ? ' start' : m.x > 97 ? ' end' : ''}" data-x="${m.x.toFixed(1)}">${m.nums.length > 1 ? `${m.nums[0]}\u2013${m.nums.at(-1)}` : m.nums[0]}</span>`).join('');
+  const legend = events.length ? `<ol class="marker-legend">${events.map((e, i) => `<li><b>${i + 1}</b>${escape(MARKER[e.kind])} <small>${clock(e.at)}</small></li>`).join('')}</ol>` : '';
+  paint('lanes', `<div class="lane lane-markers" aria-hidden="true"><span></span><div class="axis">${labels}</div><span></span></div>${rows}<div class="lane lane-ticks" aria-hidden="true"><span></span><div class="axis"><span data-x="0">\u221210 min</span><span data-x="50">\u22125 min</span><span data-x="100">now</span></div><span></span></div>${legend}`);
+  // CSP forbids inline style attributes; positioning through the CSSOM is allowed.
+  document.querySelectorAll('#lanes [data-x]').forEach((el) => { el.style.left = `${el.dataset.x}%`; });
+  $('lanes-summary').textContent = laneSummary(data);
+}
+
 function render(data) {
   latest = data;
   const obs = data.observation;
@@ -255,11 +354,8 @@ function render(data) {
   $('error').textContent = problems.join(' \u00b7 ');
   $('availability').textContent = journeys.length ? `${Math.round(ok / journeys.length * 100)}%` : '\u2014';
   $('availability').className = ok < journeys.length ? 'bad' : '';
-  $('issues-count').textContent = data.issue && data.issue.status !== 'resolved' ? '1' : '0';
-  $('issues-count').className = data.issue && data.issue.status !== 'resolved' ? 'bad' : '';
-  const guardsOk = guards.filter((p) => p.ok).length;
-  $('guard-count').textContent = guards.length ? `${guardsOk}/${guards.length}` : '\u2014';
-  $('guard-count').className = guardsOk < guards.length ? 'bad' : '';
+  $('customers').textContent = data.impact ? data.impact.customers.toLocaleString() : '\u2014';
+  $('customers').className = data.impact?.customers ? 'bad' : '';
   const recovered = [...data.history, ...(data.issue ? [data.issue] : [])].filter((i) => i.status === 'resolved' && i.resolvedAt).at(-1);
   $('last-recovery').textContent = recovered ? duration(recovered.resolvedAt - recovered.detectedAt) : '\u2014';
   const issue = data.issue;
@@ -272,7 +368,7 @@ function render(data) {
   $('journey-badge').textContent = journeys.length ? `${ok} OF ${journeys.length} OPERATIONAL` : 'LIVE PROBES';
   $('journey-badge').className = `pill ${journeys.length && ok < journeys.length ? 'tone-bad' : 'tone-ok'}`;
   renderMap(data, journeys);
-  if (journeys.length) paint('journeys', journeys.map((p) => `<article class="journey ${p.ok ? '' : 'failing'}"><span class="state-icon" aria-hidden="true">${p.ok ? '\u2713' : '!'}</span><div><h3>${escape(p.label)}</h3><p>${escape(p.detail)}</p></div><div class="probe-result"><strong>${p.ok ? 'Operational' : 'Disrupted'}</strong><small>${p.latencyMs != null ? `${escape(p.latencyMs)} ms` : 'Probe failed'}</small></div></article>`).join(''));
+  renderLanes(data, journeys);
   if (guards.length) paint('guardrails', guards.map((p) => `<div class="guard ${p.ok ? '' : 'failing'}"><span aria-hidden="true">${p.ok ? '\u2713' : '!'}</span>${escape(p.label)}<small>${p.ok ? 'Holding' : 'Violated'}</small></div>`).join(''));
   let announcement = 'Monitoring. No active service issues.';
   const activity = data.activity ?? (pending ? localActivity : null);

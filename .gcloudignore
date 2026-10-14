@@ -1,0 +1,11 @@
+# Source uploaded by `gcloud run deploy --source .`: keep secrets, lab keys and local state on this machine.
+.gcloudignore
+.git
+#!include:.gitignore
+.idea/
+/docs/
+/lab/
+/local-app/
+/scripts/
+/tests/
+backend/tests/

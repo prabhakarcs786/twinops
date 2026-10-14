@@ -38,6 +38,10 @@ def test_completed_incident_keeps_apply_outcome_after_restart(tmp_path):
     with TestClient(create_app(settings)) as client:
         after = client.get(path + "/proof-pack").json()
         assert after["apply"] == before["apply"]
+        summary = client.get("/api/incidents").json()[0]
+        assert summary["outcome"] == "applied" and summary["cause"] and summary["fix"]
+        assert summary["affected"] >= 1 and summary["journeys"] >= summary["affected"]
+        assert 0 < summary["verdictMs"] <= summary["restoredMs"]
         assert after["write_log"] == before["write_log"]
         assert after["approval"] == before["approval"]
 

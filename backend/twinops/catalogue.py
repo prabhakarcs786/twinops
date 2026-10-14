@@ -11,7 +11,7 @@ from .model import State, add_minutes, clone
 from .topology import Topology, pop_by_index, pops
 
 CATALOGUE_VERSION = "catalogue-0.1.0"
-POLICY_VERSION = "policy-0.1.0"
+POLICY_VERSION = "policy-0.2.0"
 MAX_BLAST_RADIUS = 2
 MAX_STEPS = 3
 

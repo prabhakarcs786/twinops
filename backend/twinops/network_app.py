@@ -9,6 +9,7 @@ import json
 import os
 import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -16,7 +17,7 @@ from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .catalogue import CATALOGUE, describe_step, forbidden_reasons, validate_change_set
@@ -56,6 +57,11 @@ class RestoreRequest(ClaimRequest):
 
 class ResetRequest(BaseModel):
     operatorRecovery: bool = False
+
+
+# Simulated subscribers per PoP: the lab probes one customer address per PoP, impact is reported in people.
+SUBSCRIBERS = {'BER': 1840, 'MUC': 1260, 'HAM': 940, 'FRA': 1520}
+TELEMETRY_WINDOW_S = 600
 
 
 def device_facts(state: dict[str, Any], topo: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -153,6 +159,8 @@ class NetworkState:
         self.recovery_reason: str | None = None
         # In-flight lab operation (memory only): a crash leaves just the persisted quarantine.
         self.activity: dict[str, Any] | None = None
+        # Probe history for the journey lanes; memory only.
+        self.telemetry: deque[dict[str, Any]] = deque(maxlen=TELEMETRY_WINDOW_S // 3)
         self.initialized = False
         if path.exists():
             saved = json.loads(path.read_text())
@@ -199,9 +207,32 @@ class NetworkState:
         if self.activity:
             self.activity['text'] = text
 
-    def event(self, actor: str, text: str):
+    def event(self, kind: str, actor: str, text: str):
         if self.proof is not None:
-            self.proof['timeline'].append({'at': time.time(), 'actor': actor, 'text': text})
+            self.proof['timeline'].append({'at': time.time(), 'kind': kind, 'actor': actor, 'text': text})
+
+    def customers_affected(self, journeys: list[dict[str, Any]]) -> int:
+        origin = {j['id']: j['from'] for j in self.topo['journeys']}
+        return sum(SUBSCRIBERS.get(pop, 0) for pop in {origin.get(j['id']) for j in journeys if not j['ok']})
+
+    def prometheus(self) -> str:
+        lines: list[str] = []
+
+        def metric(name: str, help_text: str, samples: list[tuple[str, float]]):
+            lines.extend([f'# HELP {name} {help_text}', f'# TYPE {name} gauge'])
+            lines.extend(f'{name}{labels} {value}' for labels, value in samples)
+
+        journeys = journey_rows(self.observation)
+        meta = {j['id']: j for j in self.topo['journeys']}
+        labels = {j['id']: f'{{journey="{j["id"]}",pop="{meta[j["id"]]["from"]}",host="{meta[j["id"]]["host"]}"}}' for j in journeys}
+        metric('metro_journey_up', 'Customer journey probe over the real lab path (1 = HTTP 200).', [(labels[j['id']], int(j['ok'])) for j in journeys])
+        metric('metro_journey_latency_seconds', 'Median probe latency of a healthy customer journey.',
+               [(labels[j['id']], round(j['latencyMs'] / 1000, 6)) for j in journeys if j['ok'] and j.get('latencyMs') is not None])
+        metric('metro_customers_affected', 'Simulated subscribers behind PoPs with a failing journey.', [('', self.customers_affected(journeys))])
+        metric('metro_incident_open', '1 while a service issue is open.', [('', int(bool(self.issue) and self.issue['status'] != 'resolved'))])
+        metric('metro_lab_ready', '1 when the lab answers measurements.', [('', int(self.ready))])
+        metric('metro_last_scan_timestamp_seconds', 'Unix time of the last completed probe scan.', [('', round(self.checked_at or 0, 3))])
+        return '\n'.join(lines) + '\n'
 
     async def snapshot(self) -> dict[str, Any]:
         return {'at': self.checked_at, 'journeys': journey_rows(self.observation),
@@ -218,29 +249,37 @@ class NetworkState:
         self.checked_at = time.time()
         journeys = [p for p in obs['probes'] if p['kind'] == 'journey']
         failed = [p for p in journeys if not p['ok']]
+        self.telemetry.append({'t': round(self.checked_at, 1), 'j': {p['id']: (p.get('latencyMs') if p['ok'] else None) for p in journeys}})
+        affected = self.customers_affected(journeys)
+        if self.issue and self.issue['status'] != 'resolved' and previous_at:
+            # Capped so a lab outage between scans is not billed as customer impact.
+            minutes = min(self.checked_at - previous_at, 30) / 60
+            self.issue['customerMinutes'] = round(self.issue.get('customerMinutes', 0) + affected * minutes, 1)
+            self.issue['peakCustomers'] = max(self.issue.get('peakCustomers', 0), affected)
         if failed and not self.issue:
             self.issue = {'id': uuid.uuid4().hex, 'detectedAt': self.checked_at, 'status': 'open', 'incidentId': None,
-                          'title': f"Service disruption · {len(failed)} journeys failing", 'failedJourneys': [p['id'] for p in failed]}
+                          'title': f"Service disruption · {len(failed)} journeys failing", 'failedJourneys': [p['id'] for p in failed],
+                          'peakCustomers': affected, 'customerMinutes': 0}
             if not self.proof or self.proof['issueId']:
                 # Not started from the exercise panel: only the last healthy probe results are known.
                 self.proof = self.new_proof(None, {'at': previous_at, 'journeys': journey_rows(previous), 'facts': None} if previous else None)
             self.proof['issueId'] = self.issue['id']
             self.proof['during'] = await self.snapshot()
-            self.event('Metro monitoring', f'Live probes: {len(failed)} of {len(journeys)} customer journeys failing. Issue opened; TwinOps checks for new issues every 5 seconds.')
+            self.event('detected', 'Metro monitoring', f'Live probes: {len(failed)} of {len(journeys)} customer journeys failing. Issue opened; TwinOps checks for new issues every 5 seconds.')
             self.save()
         elif failed and self.issue and self.issue['status'] == 'resolved':
             self.issue['status'] = 'open'
             self.issue.pop('resolvedAt', None)
             if self.proof:
                 self.proof['after'] = None
-            self.event('Metro monitoring', f'Live probes: {len(failed)} of {len(journeys)} customer journeys failing again.')
+            self.event('reopened', 'Metro monitoring', f'Live probes: {len(failed)} of {len(journeys)} customer journeys failing again.')
             self.save()
         elif self.issue and not failed and self.issue['status'] != 'resolved':
             self.issue['status'] = 'resolved'
             self.issue['resolvedAt'] = self.checked_at
             if self.proof:
                 self.proof['after'] = await self.snapshot()
-            self.event('Metro monitoring', f'Live probes: all {len(journeys)} customer journeys succeed again.')
+            self.event('recovered', 'Metro monitoring', f'Live probes: all {len(journeys)} customer journeys succeed again.')
             self.save()
         self.ready = True
         self.error = None
@@ -265,15 +304,27 @@ class NetworkState:
     def dashboard(self, public: bool = True):
         # The connector keeps the raw quarantine flag; people see an in-flight write as progress, not as a failure.
         in_flight = public and self.activity is not None
+        # Read-only probes use the device lock too. An exercise can wait for those
+        # reads; only actual operations and issue ownership should disable its controls.
+        operating = self.activity is not None or bool(self.operation and self.operation['status'] in ('applying', 'restoring'))
+        exercise_ready = self.ready and not self.recovery and not operating
         data = {'name': 'Metro Network', 'ready': self.ready, 'error': self.error, 'checkedAt': self.checked_at,
                 'backend': 'Containerlab · FRR / CoreDNS / nginx', 'observation': self.observation,
                 'topology': self.topo, 'issue': self.issue, 'history': self.history[-50:], 'recoveryRequired': self.recovery and not in_flight,
                 'recoveryReason': None if in_flight else self.recovery_reason, 'activity': dict(self.activity) if self.activity else None,
                 'busy': self.lock.locked(), 'operation': self.operation['status'] if self.operation else None,
+                'exercise': {
+                    'canInject': exercise_ready and (not self.issue or self.can_replace_issue()),
+                    'canReset': exercise_ready and bool(self.issue)
+                    and self.issue.get('investigationStatus') != 'investigating',
+                },
                 'twinopsUrl': os.environ.get('TWINOPS_UI_URL', 'http://localhost:5173')}
         if public:
             data['proof'] = self.public_proof()
             data['verify'] = verify_commands(self.settings, self.topo)
+            data['telemetry'] = list(self.telemetry)
+            data['window'] = TELEMETRY_WINDOW_S
+            data['impact'] = {'customers': self.customers_affected(journey_rows(self.observation)), 'subscribers': sum(SUBSCRIBERS.values()), 'byPop': SUBSCRIBERS}
         return data
 
     def public_proof(self) -> dict[str, Any] | None:
@@ -361,6 +412,10 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
     async def dashboard():
         return state.dashboard()
 
+    @app.get('/metrics')
+    async def metrics():
+        return PlainTextResponse(state.prometheus(), media_type='text/plain; version=0.0.4')
+
     @app.post('/api/faults')
     async def fault(body: FaultRequest):
         async with state.lock:
@@ -379,7 +434,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
                     raise HTTPException(409, 'Customer journeys are already failing; resolve that issue first')
                 # The fault name stays in this app: it is never part of the issue or connector payloads.
                 state.proof = state.new_proof(body.fault, await state.snapshot())
-                state.event('You (exercise panel)', 'Introduced one fault on the live devices. TwinOps is not told which one.')
+                state.event('fault', 'You (exercise panel)', 'Introduced one fault on the live devices. TwinOps is not told which one.')
                 state.step('Introducing the fault on the live devices')
                 # Persist intent before a device write: an interrupted fault injection is uncertain too.
                 state.quarantine('Introducing the fault did not finish.')
@@ -418,7 +473,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
             if state.issue.get('investigationStatus') in ('finished', 'recovery_required'):
                 raise HTTPException(409, 'Issue already investigated')
             state.issue.update(incidentId=body.incidentId, investigationStatus='investigating')
-            state.event('TwinOps', f'Picked up the issue on its own ({body.incidentId}) and started reproducing it in its separate twin network.')
+            state.event('claimed', 'TwinOps', f'Picked up the issue on its own ({body.incidentId}) and started reproducing it in its separate twin network.')
             state.save()
             return {'issue': state.issue}
 
@@ -430,7 +485,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
             if body.status == 'recovery_required':
                 state.quarantine('TwinOps could not verify its change or the rollback.')
             if state.issue.get('investigationStatus') == 'investigating':
-                state.event('TwinOps', 'Reported that an operator must recover the lab.' if state.recovery
+                state.event('closed', 'TwinOps', 'Reported that an operator must recover the lab.' if state.recovery
                             else 'Closed its investigation.' if state.operation else 'Closed its investigation without changing the network.')
             state.issue['investigationStatus'] = 'recovery_required' if state.recovery else 'finished'
             state.save()
@@ -454,6 +509,20 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
             raise HTTPException(404, 'Unknown journey')
         async with state.lock:
             return await state.network.probe(journey_id, family)
+
+    @app.get('/api/evidence', dependencies=auth)
+    async def evidence():
+        from .evidence import capture_snapshot
+        async with state.lock:
+            observation, captured, snapshot = await capture_snapshot(state.network)
+            return {'observation': observation, 'state': captured, 'snapshot': snapshot, 'writes': state.network.writes}
+
+    @app.get('/api/diagnostics/{journey_id}/{kind}', dependencies=auth)
+    async def diagnostic(journey_id: str, kind: Literal['direct_ip', 'dns_lookup', 'route_lookup', 'tls_probe']):
+        if not any(j['id'] == journey_id for j in state.topo['journeys']):
+            raise HTTPException(404, 'Unknown journey')
+        async with state.lock:
+            return await state.network.diagnostic(kind, journey_id)
 
     @app.post('/api/apply', dependencies=auth)
     async def apply(body: ApplyRequest):
@@ -488,7 +557,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
                     state.proof['applied'] = {
                         'at': time.time(), 'label': body.change['label'], 'rationale': body.change['rationale'], 'hash': body.change['hash'][:12],
                         'steps': [{'title': CATALOGUE[s['action']].title, 'target': s['target'], 'command': describe_step(s)} for s in body.change['steps']]}
-                state.event('Apply gateway', f"A person approved “{body.change['label']}” in TwinOps. The gateway verified the approval and that the devices had not changed since, then applied it.")
+                state.event('applied', 'Apply gateway', f"A person approved “{body.change['label']}” in TwinOps. The gateway verified the approval and that the devices had not changed since, then applied it.")
                 state.save()
                 return {'previous': previous, 'writes': state.network.writes}
             except BaseException:
@@ -515,7 +584,7 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
                 op['status'] = 'restored'
                 if state.proof and state.proof['applied']:
                     state.proof['applied']['rolledBack'] = True
-                state.event('Apply gateway', 'Rolled the change back. Device state verified identical to the snapshot taken before the change.')
+                state.event('rolledback', 'Apply gateway', 'Rolled the change back. Device state verified identical to the snapshot taken before the change.')
                 state.release()
             return {'writes': state.network.writes}
 
@@ -525,8 +594,12 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
     async def index():
         return FileResponse(assets / 'index.html')
 
+    @app.get('/favicon.ico', include_in_schema=False)
+    async def favicon():
+        return FileResponse(assets / 'favicon.svg', media_type='image/svg+xml')
+
     @app.get('/{asset}')
-    async def asset(asset: Literal['app.js', 'style.css']):
+    async def asset(asset: Literal['app.js', 'style.css', 'favicon.svg']):
         return FileResponse(assets / asset)
 
     return app

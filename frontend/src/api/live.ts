@@ -1,9 +1,14 @@
 import type { ApplyOutcome, RunResult } from '../engine/orchestrator.ts';
 import type { ApprovalRecord, FaultId, PackId, RunEvent, ScenarioVariant } from '../engine/types.ts';
+import type { IncidentLifecycle, NetworkConnection } from './contracts.ts';
+export type { ConnectionIssue, NetworkConnection } from './contracts.ts';
 
 /** Client for the TwinOps backend (FastAPI + SSE). Same event and run shapes as the in-browser engine. */
 
 export interface BackendConfig {
+  role?: 'viewer' | 'investigator' | 'approver' | null;
+  applyEnabled?: boolean;
+  authenticationRequired?: boolean;
   version: string;
   planner: { kind: string; provider: string; model: string; mode: string; version: string };
   twin: { backend: 'model' | 'emulated'; ready: boolean; detail: string };
@@ -22,6 +27,7 @@ export interface Narrative {
 }
 
 export interface LiveIncident {
+  lifecycle?: IncidentLifecycle;
   incidentId: string;
   status: string;
   seed: number;
@@ -43,6 +49,13 @@ export interface IncidentSummary {
   pack: PackId;
   verdict: string | null;
   outcome: string | null;
+  cause?: string | null;
+  fix?: string | null;
+  reused?: boolean;
+  affected?: number;
+  journeys?: number;
+  verdictMs?: number | null;
+  restoredMs?: number | null;
 }
 
 export const fetchHistory = () => json<IncidentSummary[]>('/api/incidents');
@@ -50,7 +63,7 @@ export const fetchHistory = () => json<IncidentSummary[]>('/api/incidents');
 const API = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
+  const res = await fetch(`${API}${path}`, { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -63,7 +76,8 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchConfig(timeoutMs = 1500): Promise<BackendConfig | null> {
+// Config includes read-only device readiness checks, which can take a few seconds on startup.
+export async function fetchConfig(timeoutMs = 5000): Promise<BackendConfig | null> {
   const ctrl = new AbortController();
   const t = window.setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -80,12 +94,9 @@ export const createIncident = (body: { pack: PackId; fault: 'random' | FaultId; 
 
 export const getIncident = (id: string) => json<LiveIncident>(`/api/incidents/${encodeURIComponent(id)}`);
 
-/** Connected mode: the investigation TwinOps is running for an open network issue, if any. */
-export async function getActiveInvestigation(): Promise<string | null> {
-  const data = await json<{ issues?: { incidentId: string | null; status: string }[] }>('/api/connections');
-  return data.issues?.find((issue) => issue.incidentId && issue.status === 'open')?.incidentId ?? null;
-}
-
+export const fetchConnection = (signal?: AbortSignal) => json<NetworkConnection>('/api/connections', { signal });
+export const injectNetworkFault = (fault: FaultId) => json<NetworkConnection>('/api/connections/network/fault', { method: 'POST', body: JSON.stringify({ fault }) });
+export const resetNetwork = () => json<NetworkConnection>('/api/connections/network/reset', { method: 'POST', body: '{}' });
 const auth = (token?: string): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
 
 export const postDecision = (id: string, body: { decision: 'approve' | 'reject'; operator: string; comment: string }, token?: string) =>
@@ -123,8 +134,8 @@ export interface ReviewSummary {
   modes: { mode: ReviewMode; trials: number; gateAgreements: number; medianMs: number | null }[];
   note: string;
 }
-export const startReview = (id: string, candidateId: string, mode: ReviewMode) =>
-  json<ReviewStarted>(`/api/incidents/${encodeURIComponent(id)}/review-trials`, { method: 'POST', body: JSON.stringify({ candidateId, mode }) });
+export const startReview = (id: string, candidateId: string, mode: ReviewMode, assignmentId?: string) =>
+  json<ReviewStarted>(`/api/incidents/${encodeURIComponent(id)}/review-trials`, { method: 'POST', body: JSON.stringify({ candidateId, mode, assignmentId }) });
 export const finishReview = (id: string, decision: ReviewDecision) =>
   json<ReviewResult>(`/api/review-trials/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify({ decision }) });
 export const fetchReviewSummary = () => json<ReviewSummary>('/api/review-trials/summary');
@@ -150,7 +161,7 @@ export const fetchReports = () => json<EvaluationReport[]>('/api/evaluation/repo
 export type StreamState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
 export function subscribe(eventsUrl: string, onEvent: (e: RunEvent) => void, onEnd: (status: string) => void, onState: (state: StreamState) => void): () => void {
-  const source = new EventSource(`${API}${eventsUrl}`);
+  const source = new EventSource(`${API}${eventsUrl}`, { withCredentials: true });
   onState('connecting');
   source.onopen = () => onState('connected');
   source.addEventListener('run', (msg) => onEvent(JSON.parse((msg as MessageEvent<string>).data) as RunEvent));

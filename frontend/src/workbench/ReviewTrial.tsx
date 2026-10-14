@@ -25,7 +25,7 @@ export function ReviewMetrics({ revision = '' }: { revision?: string }) {
     {error && <p role="alert">{error}</p>}
     {!summary && !error && <p role="status">Loading measurements...</p>}
     {summary && <>
-      <p>{summary.totalTrials} completed anonymous trials; {summary.pairedTasks} candidate tasks reviewed in both conditions.</p>
+      <p>{summary.totalTrials} completed trials; {summary.pairedTasks} candidate tasks reviewed in both conditions.</p>
       {!summary.pairedTasks ? <p className="muted">No matched-task comparison yet. Productivity improvement has not been established.</p>
         : <div className="table-wrap" role="region" aria-label="Matched review measurements" tabIndex={0}><table className="diff">
           <caption className="sr-only">Results for identical incident and candidate tasks only</caption>
@@ -40,6 +40,7 @@ export function ReviewMetrics({ revision = '' }: { revision?: string }) {
 export function ReviewTrial({ theme, onToggleTheme }: { theme: 'dark' | 'light'; onToggleTheme: () => void }) {
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const incidentId = params.get('incident') ?? '';
+  const assignmentId = params.get('assignment') ?? undefined;
   const [detail, setDetail] = useState<LiveIncident | null>(null);
   const [candidateId, setCandidateId] = useState(params.get('candidate') ?? '');
   const [mode, setMode] = useState<ReviewMode>(params.get('mode') === 'proof' ? 'proof' : 'raw');
@@ -71,7 +72,7 @@ export function ReviewTrial({ theme, onToggleTheme }: { theme: 'dark' | 'light';
     if (!candidate) return;
     setBusy(true);
     setError('');
-    try { setTrial(await startReview(incidentId, candidate.change.id, mode)); }
+    try { setTrial(await startReview(incidentId, candidate.change.id, mode, assignmentId)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Trial could not start.'); }
     finally { setBusy(false); }
   };
@@ -88,7 +89,7 @@ export function ReviewTrial({ theme, onToggleTheme }: { theme: 'dark' | 'light';
   return <div className="wb">
     <SiteHeader variant="app" theme={theme} onToggleTheme={onToggleTheme} />
     <main id="main" className="review-page" tabIndex={-1}>
-      <header className="review-intro"><p className="stage-kicker">Anonymous operator trial</p><h1>Review the evidence.</h1><StatusChip tone="info">Read-only study, not approval</StatusChip></header>
+      <header className="review-intro"><p className="stage-kicker">{assignmentId ? 'Assigned operator trial' : 'Anonymous operator trial'}</p><h1>Review the evidence.</h1><StatusChip tone="info">Read-only study, not approval</StatusChip></header>
       <a className="evidence-link" href={incidentId ? back : '/workbench'}><ArrowLeft size={14} aria-hidden="true" />Return to investigation</a>
       {error && <p className="recovery-notice" role="alert">{error}</p>}
       {!incidentId && <p>No incident was selected.</p>}
@@ -96,8 +97,9 @@ export function ReviewTrial({ theme, onToggleTheme }: { theme: 'dark' | 'light';
       {detail && !candidate && <p>No tested candidate is available for review.</p>}
       {run && candidate && <>
         {!trial && <section className="review-setup" aria-label="Review setup">
-          <label className="field"><span>Candidate task</span><select value={candidate.change.id} onChange={(event) => setCandidateId(event.target.value)}>{run.candidates.map((item) => <option key={item.change.id} value={item.change.id}>{item.change.id}</option>)}</select></label>
-          <fieldset className="review-modes"><legend>Evidence condition</legend>
+          {assignmentId && <p>Your task and evidence condition are assigned. Complete this review once, in the provided order.</p>}
+          <label className="field"><span>Candidate task</span><select disabled={Boolean(assignmentId)} value={candidate.change.id} onChange={(event) => setCandidateId(event.target.value)}>{run.candidates.map((item) => <option key={item.change.id} value={item.change.id}>{item.change.id}</option>)}</select></label>
+          <fieldset className="review-modes" disabled={Boolean(assignmentId)}><legend>Evidence condition</legend>
             <label><input type="radio" name="review-mode" value="raw" checked={mode === 'raw'} onChange={() => setMode('raw')} />Raw observations</label>
             <label><input type="radio" name="review-mode" value="proof" checked={mode === 'proof'} onChange={() => setMode('proof')} />Proof Pack</label>
           </fieldset>

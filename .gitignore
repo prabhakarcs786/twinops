@@ -47,3 +47,4 @@ lab/.feasibility/
 backend/.data/
 ### Telekom local runtime and context ###
 .telekom/
+frontend/.playwright-data/

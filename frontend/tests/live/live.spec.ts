@@ -29,6 +29,12 @@ test('live run streams over SSE and requires the operator passcode', async ({ pa
   const verdict = await breakAndWaitForVerdict(page, 'route_misconfig', 'PASS UNDER DEFINED TESTS');
   await expect(verdict).toContainText(/Remove EDGE-IN seq \d+ only/);
   await expect(verdict).toContainText('Server compute');
+  await expect(page.getByRole('region', { name: 'What supports this decision?' })).toContainText('model-derived');
+  await expect(page.locator('.timeline-count')).toHaveCount(0);
+  await page.screenshot({ path: `test-results/decision-${test.info().project.name}.png`, fullPage: true });
+  const decisionAccessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  expect(decisionAccessibility.violations.map((v) => v.id)).toEqual([]);
+  await page.getByRole('button', { name: 'Investigation detail', exact: true }).click();
   await expect(page.locator('.timeline-count')).not.toHaveText('0 events');
   await expect(page.locator('.counter-ok .counter-value')).toHaveText('0');
 
@@ -74,10 +80,14 @@ test('AI trace explains a runbook run, and Ask needs an LLM planner', async ({ p
   await expect(page.getByRole('button', { name: 'Ask TwinOps about this run' })).toHaveCount(0);
 });
 
-test('the in-browser engine stays available next to the backend', async ({ page }) => {
-  await page.goto('/workbench?speed=instant&fault=dns_failure');
+test('a resumed backend incident can switch to the in-browser engine', async ({ page }) => {
+  await breakAndWaitForVerdict(page, 'dns_failure', 'PASS UNDER DEFINED TESTS');
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toBeVisible();
+  await page.getByText('Runtime details', { exact: true }).click();
   await page.getByRole('button', { name: 'In-browser' }).click();
   await expect(page.locator('.mode-line')).toContainText('In-browser model twin');
+  await expect(page).not.toHaveURL(/incident=/);
   await page.getByRole('button', { name: 'Break the network' }).click();
   await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toContainText('Restore record and purge cached answer');
 });
@@ -88,9 +98,11 @@ test('refresh resumes the same incident and history reopens its evidence', async
   await breakAndWaitForVerdict(page, 'dns_failure', 'PASS UNDER DEFINED TESTS');
   const incident = new URL(page.url()).searchParams.get('incident');
   expect(incident).toBeTruthy();
+  await page.getByRole('button', { name: 'Investigation detail', exact: true }).click();
   const count = await page.locator('.timeline-count').innerText();
   await page.reload();
   await expect(page.getByRole('region', { name: 'PASS UNDER DEFINED TESTS' })).toBeVisible();
+  await page.getByRole('button', { name: 'Investigation detail', exact: true }).click();
   await expect(page.locator('.timeline-count')).toHaveText(count);
   expect(new URL(page.url()).searchParams.get('incident')).toBe(incident);
   expect(creates).toBe(1);
@@ -105,8 +117,17 @@ test('refresh resumes the same incident and history reopens its evidence', async
 
 test('elapsed time advances while the event stream is quiet', async ({ page }) => {
   await page.clock.install();
-  // Hold the stream before its first event, as with a quiet model call or reconnect.
-  await page.route('**/api/incidents/*/events', () => {});
+  // Show the first observation, then leave the stream quiet during diagnosis.
+  // Before any evidence arrives, the workbench deliberately shows a loading shell.
+  await page.route('**/api/incidents/*/events', async (route) => {
+    let first: string | undefined;
+    await expect.poll(async () => {
+      const response = await route.fetch({ url: `${route.request().url()}?follow=false` });
+      first = (await response.text()).split('\n\n').find((event) => event.includes('event: run'));
+      return first;
+    }).toBeTruthy();
+    await route.fulfill({ contentType: 'text/event-stream', body: `${first}\n\n` });
+  });
   await page.goto('/workbench?speed=instant&fault=dns_failure');
   await expect(page.locator('.mode-line')).toContainText('Live backend');
   await page.getByRole('button', { name: 'Break the network' }).click();
@@ -115,7 +136,7 @@ test('elapsed time advances while the event stream is quiet', async ({ page }) =
   const before = await elapsed.innerText();
   await page.clock.fastForward(3000);
   await expect(elapsed).not.toHaveText(before);
-  await expect(page.locator('.timeline-count')).toHaveText('0 events');
+  await expect(page.locator('.timeline-count')).toHaveText('1 events');
 });
 
 test('review trial separates raw evidence from the gate and never applies a change', async ({ page }) => {
@@ -154,6 +175,7 @@ test('review trial separates raw evidence from the gate and never applies a chan
 test('memory retests a stale historical fix against changed rule ordering', async ({ page }) => {
   await page.goto('/workbench?speed=instant&fault=route_misconfig');
   await expect(page.locator('.mode-line')).toContainText('Live backend');
+  await page.getByRole('button', { name: 'Scenario settings', exact: true }).click();
   await page.locator('.challenge-controls > summary').click();
   await page.getByLabel('Seed (optional)').fill('2007');
   await page.getByRole('button', { name: 'Break the network' }).click();
@@ -193,6 +215,7 @@ test('memory retests a stale historical fix against changed rule ordering', asyn
 test('missing data and interpretations stay distinct from verified outcomes', async ({ page }) => {
   await page.goto('/workbench?speed=instant&fault=route_misconfig');
   await expect(page.locator('.mode-line')).toContainText('Live backend');
+  await page.getByRole('button', { name: 'Scenario settings', exact: true }).click();
   await page.locator('.challenge-controls > summary').click();
   await page.getByRole('combobox', { name: 'Challenge conditions', exact: true }).selectOption('missing_history');
   await page.getByRole('button', { name: 'Break the network' }).click();
@@ -210,6 +233,7 @@ test('missing data and interpretations stay distinct from verified outcomes', as
 test('provider outage is explicitly simulated and fallback remains inspectable', async ({ page }) => {
   await page.goto('/workbench?speed=instant&fault=dns_failure');
   await expect(page.locator('.mode-line')).toContainText('Live backend');
+  await page.getByRole('button', { name: 'Scenario settings', exact: true }).click();
   await page.locator('.challenge-controls > summary').click();
   await page.getByRole('combobox', { name: 'Challenge conditions', exact: true }).selectOption('provider_outage');
   await page.getByLabel('Retest compatible historical fixes').uncheck();

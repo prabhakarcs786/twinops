@@ -327,6 +327,38 @@ class LabInstance:
             return failed[0]
         return {**failed[0], "failure": "intermittent", "detail": f"{len(failed)} of {len(samples)} samples failed — {failed[0]['detail']}"}
 
+    async def diagnostic(self, state: State, journey: dict[str, Any], kind: str) -> dict[str, Any]:
+        """Read-only dig, curl and vtysh diagnostics. No shell or configuration commands."""
+        from ipaddress import ip_network
+
+        pop = self.pop_for(journey["from"])
+        host = check_host(journey["host"])
+        if kind == "direct_ip":
+            pinned = copy.deepcopy(state)
+            pinned["clients"]["hosts"][host] = GW_VIPS[host]
+            return await self.sample(pinned, journey)
+        if kind == "dns_lookup":
+            server = DNS[state["dns"]["active"]]
+            answer = await self._dig(pop, server, DNS_COLD_PORT, host, "A")
+            cached = await self._dig(pop, server, DNS_WARM_PORT, host, "A")
+            return {"ok": answer == GW_VIPS[host], "path": [journey["from"], "DNS-1"],
+                    "detail": f"dig {host}: answer={answer}, inventory={GW_VIPS[host]}, warm cache={cached}",
+                    "raw": {"answer": answer, "warmAnswer": cached, "expected": GW_VIPS[host]}}
+        if kind == "route_lookup":
+            prefix = str(ip_network(node_by_id(self.topo, journey["from"])["prefix"]))
+            raw = await self.vtysh(f"show bgp ipv4 unicast {prefix} json")
+            routes = json.loads(raw or "{}")
+            present = bool(routes.get("paths"))
+            return {"ok": present, "path": [journey["from"], "B17"],
+                    "detail": f"FRR BGP table: {prefix} {'has paths' if present else 'has no paths'}", "raw": routes}
+        if kind == "tls_probe":
+            rc, out, err = await self._curl(pop, "v4", host, GW_VIPS[host], 443, False, source=pop.p2p_pop)
+            return {"ok": rc == 0 and out.startswith("200"), "path": [journey["from"], "GW-1"],
+                    "failure": "tls_expired" if rc == 60 and "expired" in err.lower() else "tls_probe_failed" if rc else None,
+                    "detail": f"TLS handshake to {host} with CA verification: curl exit {rc}; {out}; {err[:200]}",
+                    "raw": {"exitCode": rc, "response": out, "error": err[:500]}}
+        raise NotImplementedError(kind)
+
     async def negatives(self, state: State, edge_id: str, baseline: State | None = None) -> list[dict[str, Any]]:
         edge = self.pop_for(edge_id)
         admin = await self.runner.exec(self.c(edge.container), ["curl", "-s", "-o", "/dev/null", "--max-time", "2", "--interface", edge.customer,

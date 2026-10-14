@@ -6,6 +6,7 @@ import copy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from .coverage import path_between
 from .hashing import js_round, round1
 from .topology import MGMT_PREFIX, SERVICE_IPS, SLO_LATENCY_MS, Topology, find_link, node_by_id, pop_by_index, pops
 
@@ -49,7 +50,8 @@ def healthy_state(topo: Topology) -> State:
     }
     b17 = clone(archived)
     # h-77 was a manual hotfix: live on the router, never written to the config archive.
-    b17.update({"revision": "r-2041+h-77", "v6Prefixes": [p0["v6Prefix"], p1["v6Prefix"], p2["v6Prefix"], p3["v6Prefix"]], "steered": [], "routingUp": True})
+    ordered_pops = [p0, p1, p2, p3, *[p for p in pops(topo) if p["id"] not in {p0["id"], p1["id"], p2["id"], p3["id"]}]]
+    b17.update({"revision": "r-2041+h-77", "v6Prefixes": [p["v6Prefix"] for p in ordered_pops], "steered": [], "routingUp": True})
     return {
         "b17": b17,
         "archive": {"r-2041": archived},
@@ -187,7 +189,11 @@ def probe_journey(state: State, topo: Topology, journey: dict[str, Any], *, fami
                 return fail([pop["id"], "B17"], "B17", "no_route", f"{pop['prefix']} rejected by EDGE-IN {where} — no return route")
         elif pop["v6Prefix"] not in b17["v6Prefixes"]:
             return fail([pop["id"], "B17"], "B17", "no_route", f"no route for {pop['v6Prefix']}")
-        path = [pop["id"], "B17", "GW-1", "SVC-1"]
+        segments = [path_between(topo, a, b, excluded=set(state["failedNodes"])) for a, b in
+                    [(pop["id"], "B17"), ("B17", "GW-1"), ("GW-1", "SVC-1")]]
+        if any(not segment for segment in segments):
+            return fail([pop["id"]], pop["id"], "no_route", "required service path unavailable")
+        path = [*segments[0], *segments[1][1:], *segments[2][1:]]
 
     for i in range(1, len(path)):
         if path[i] in state["failedNodes"]:

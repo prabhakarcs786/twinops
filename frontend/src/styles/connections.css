@@ -1,8 +1,8 @@
-.connections-main { max-width: 1200px; margin: auto; padding: 64px 28px; }
-.connections-main > h1 { font-size: clamp(36px, 5vw, 58px); letter-spacing: -2px; line-height: 1.12; margin: 16px 0 22px; }
+.connections-main { max-width: 1200px; margin: auto; padding: 24px 28px; }
+.connections-main > h1 { font-size: 28px; letter-spacing: -1px; line-height: 1.2; margin: 0 0 10px; }
 .connections-lede { max-width: 720px; line-height: 1.8; color: var(--text-2); font-size: 15px; }
-.connection-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; padding: 30px; margin-top: 42px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-.connection-app-icon { width: 70px; height: 70px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 16px; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.connection-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; padding: 22px; margin-top: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.connection-app-icon { width: 52px; height: 52px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 16px; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .connection-app-info .eyebrow { margin: 0 0 10px; }
 .connection-app-info h2 { font-size: 24px; margin: 0 0 8px; }
 .connection-app-info p, .connection-app-info small { display: block; margin: 0 0 4px; font-size: 13px; color: var(--muted); }
@@ -12,13 +12,13 @@
 .journey-health-summary { margin-right: 6px; font-weight: 700; color: var(--text); }
 .connections-explainer { display: flex; flex-wrap: wrap; gap: 35px; padding: 22px 0; color: var(--muted); font-size: 13px; }
 .connections-explainer span { display: flex; align-items: center; gap: 8px; }
-.connected-issues { margin-top: 34px; }
+.connected-issues { margin-top: 12px; }
 .connected-section-heading { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 .connected-section-heading h2 { font-size: 20px; margin: 0; }
 .connected-section-heading span { font-size: 13px; color: var(--muted); }
-.connections-empty { margin-top: 24px; padding: 52px 20px; text-align: center; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--muted); }
+.connections-empty { margin-top: 24px; padding: 24px 20px; text-align: center; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--muted); }
 .connections-empty svg { color: var(--ai); }
-.connections-empty h3 { margin: 20px 0 10px; color: var(--text); }
+.connections-empty h3 { margin: 12px 0 10px; color: var(--text); }
 .connections-empty p { font-size: 14px; }
 .connected-issue { --tone: var(--border-2); display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 18px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--tone); }
 .connected-issue.tone-ok { --tone: var(--ok); }
@@ -31,7 +31,7 @@
 .connected-issue-waiting { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .connection-alert { margin: 24px 0 0; padding: 15px; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 14px; line-height: 1.6; }
 @media (max-width: 720px) {
-  .connections-main { padding: 35px 20px; }
+  .connections-main { padding: 20px 16px; }
   .connection-card { grid-template-columns: auto 1fr; padding: 22px; }
   .connection-card-actions { grid-column: 1 / -1; align-items: flex-start; }
   .connected-issue { align-items: flex-start; flex-direction: column; }

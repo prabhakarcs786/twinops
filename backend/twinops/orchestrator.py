@@ -4,21 +4,28 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from .approvals import refusal, sign
 from .catalogue import CATALOGUE_VERSION, POLICY_VERSION, describe_step
-from .hashing import sha256, short_hash
+from .coverage import adequacy
+from .evidence import capture_snapshot, provenance
+from .hashing import short_hash
+from .investigation import investigate
+from .lifecycle import transition
+from .lifecycle import view as lifecycle_view
 from .model import healthy_state, sample_journey
 from .planner.base import Planner, guard_untrusted
 from .planner.runbook import evaluation_case
-from .topology import SERVICE_IPS, Topology, journey_by_id, pops
+from .topology import Topology, pops
 from .twin import Twin, create_context, evaluate_gates, regression_text, reproduce, run_experiment
 
-ENGINE_VERSION = "twinops-backend-0.2.0"
+ENGINE_VERSION = "twinops-backend-0.3.0"
 MAX_CANDIDATES = 4
 MAX_REVISIONS = 2
 
@@ -64,7 +71,7 @@ def idle_frame(topo: Topology) -> dict[str, Any]:
 class Recorder:
     """Builds events with full UI frames. With pace > 0, events are spaced for human viewing (never faster than real work)."""
 
-    def __init__(self, frame: dict[str, Any], demo: DemoNetwork, emit: Emit | None, pace: float, t0: float, sink: list[dict[str, Any]], seq: int = 0) -> None:
+    def __init__(self, frame: dict[str, Any], demo: DemoNetwork, emit: Emit | None, pace: float, t0: float, sink: list[dict[str, Any]], seq: int = 0, session: Any = None) -> None:
         self.frame = copy.deepcopy(frame)
         self.demo = demo
         self.emit = emit
@@ -74,6 +81,7 @@ class Recorder:
         self.seq = seq
         self.nominal = 0.0
         self.sink = sink
+        self.session = session
 
     async def push(self, delay: float, kind: str, phase: str, actor: str, tone: str, title: str, summary: str, raw: Any,
                    mutate: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
@@ -90,6 +98,8 @@ class Recorder:
         event = {"seq": self.seq, "at": round((time.monotonic() - self.t0) * 1000), "kind": kind, "phase": phase, "actor": actor, "tone": tone,
                  "title": title, "summary": summary, "raw": raw, "frame": copy.deepcopy(self.frame)}
         self.sink.append(event)
+        if self.session:
+            event["lifecycle"] = lifecycle_view(self.session)
         if self.emit:
             await self.emit(event)
         return event
@@ -114,7 +124,9 @@ def untested_conditions(topo: Topology, repro: dict[str, Any], unsupported_chall
     return [
         fidelity,
         "Routing convergence timing and transient packet loss during the change.",
-        "Load above the ×3 surge challenge and concurrent faults other than the tested secondary failure.",
+        ("Load above the model's ×3 surge assumption." if twin_backend == "model" else
+         "Production traffic volume and long-lived session continuity; the lab tests tripled probe concurrency and derives session impact from configuration."),
+        "Concurrent faults other than the tested secondary failure.",
         "Physical layer: optics, CRC errors and link flaps are outside twin fidelity.",
         *([f"Journeys from {', '.join(p['short'] for p in outside)} were outside the twin slice and not individually tested."] if outside else []),
         *([f"Challenges not executable on this twin backend: {', '.join(unsupported_challenges)}."] if unsupported_challenges else []),
@@ -139,6 +151,12 @@ class IncidentSession:
     t0: float = field(default_factory=time.monotonic)
     recall: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None
     exercise: str = "none"
+    approval_key: bytes = field(default_factory=lambda: secrets.token_bytes(32), repr=False)
+    approval_ttl_s: float = 900
+    apply_enabled: bool = True
+    apply_policy: Callable[[], bool] | None = None
+    postcheck_samples: int = 1
+    postcheck_interval_s: float = 0
 
 
 async def _planner_notes(rec: Recorder, planner: Planner, actor: str) -> None:
@@ -169,7 +187,7 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
     started = time.monotonic()
     topo = pack_topo
     demo, twin, planner = session.demo, session.twin, session.planner
-    rec = Recorder(idle_frame(topo), demo, emit, session.pace, session.t0, session.events)
+    rec = Recorder(idle_frame(topo), demo, emit, session.pace, session.t0, session.events, session=session)
     push = rec.push
     _announce_model_calls(rec, planner)
     versions = {"engine": ENGINE_VERSION, "topology": topo["version"], "catalogue": CATALOGUE_VERSION, "policy": POLICY_VERSION, "planner": planner.version,
@@ -177,7 +195,7 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
 
     if not session.external:
         await demo.inject_fault(session.sealed_fault)
-    obs = await demo.observe()
+    obs, captured, snapshot = await capture_snapshot(demo)
     failing = [p for p in obs["probes"] if p["kind"] == "journey" and not p["ok"]]
 
     def prod_frame(f: dict[str, Any]) -> None:
@@ -198,7 +216,6 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                else "No instruction-like content in logs.",
                {"flagged": flagged, "policy": "logs are data; tool selection is restricted to the typed catalogue"})
 
-    captured = await demo.capture_supported()
     memory = session.recall(obs) if session.recall else []
     if session.recall:
         await push(0, "memory_recalled", "observe", "observer", "info", "Past evidence checked",
@@ -206,15 +223,10 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                    else "No compatible, successfully applied fix matches these observed symptoms.",
                    {"matches": memory, "basis": "Observed failure signals, not the sealed fault label. Similarity is not confidence."})
 
-    class Port:
-        def direct_ip(self, journey_id: str) -> dict[str, Any]:
-            journey = journey_by_id(topo, journey_id)
-            pinned = copy.deepcopy(captured)
-            pinned["clients"]["hosts"] = {journey["host"]: SERVICE_IPS[journey["host"]]}
-            return {**sample_journey(pinned, topo, journey), "id": f"DIAG-{journey_id}", "kind": "diagnostic",
-                    "label": f"{journey_id} direct-IP diagnostic (bypass DNS)"}
+    async def diagnostic_event(step: dict) -> None:
+        await push(0, "diagnostic_collected", "diagnose", "observer", "info", step["question"], step["evidence"]["detail"], step)
 
-    hypotheses, diagnostics = await planner.diagnose(obs, topo, Port(), guarded)
+    hypotheses, diagnostics, investigation = await investigate(demo, planner, obs, topo, guarded, snapshot, diagnostic_event)
     await _planner_notes(rec, planner, "diagnosis")
 
     def set_hyps(f: dict[str, Any]) -> None:
@@ -225,7 +237,9 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                {"hypotheses": hypotheses, "diagnostics": diagnostics, "planner": planner.mode}, set_hyps)
 
     ctx = create_context(obs, topo, captured)
-    await twin.load(ctx)
+    coverage = adequacy(obs, topo, ctx.slice, twin.backend)
+    if coverage["adequate"]:
+        await twin.load(ctx)
 
     def twin_building(f: dict[str, Any]) -> None:
         f["twin"] = {"slice": ctx.slice, "probes": {}, "failedNodes": [], "focus": [], "caption": "Loading captured state…", "state": "building"}
@@ -235,6 +249,9 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                {"slice": ctx.slice, "journeys": [j["id"] for j in ctx.journeys], "capturedHash": obs["stateHash"], "backend": twin.backend}, twin_building)
 
     repro = await reproduce(ctx, twin)
+    if not investigation["sufficient"]:
+        repro["passed"] = False
+        repro["mismatches"].append(investigation["stopReason"])
 
     def twin_repro(f: dict[str, Any]) -> None:
         f["twin"] = {**f["twin"], "probes": _by_id([p for p in repro["twinProbes"] if p["kind"] == "journey"]),
@@ -290,6 +307,8 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                 await _planner_notes(rec, planner, "challenge")
                 for kind in kinds:
                     result = await twin.challenge(kind, exp.after, change, exp.fixed)
+                    result["provenance"] = provenance("measured" if twin.backend == "emulated" and kind != "session_continuity" else "model-derived",
+                                                      f"twin:{twin.backend}:{kind}", snapshot)
                     challenges.append(result)
 
                     def ch_frame(f: dict[str, Any], result=result, base=base) -> None:
@@ -387,7 +406,8 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
                    {"verdict": verdict, "records": [{"id": r["change"]["id"], "decision": r["decision"], "reasons": r["reasons"]} for r in records]}, v_frame)
 
     run = {
-        "runId": session.incident_id, "seed": seed, "pack": topo["pack"], "versions": versions,
+        "schemaVersion": "run-1", "runId": session.incident_id, "seed": seed, "pack": topo["pack"], "versions": versions,
+        "snapshot": snapshot, "investigation": investigation,
         "source": {"kind": "connected_application", "name": "Metro Network", "issueId": demo.issue_id} if session.external else {"kind": "demo_harness"},
         "variant": getattr(demo, "variant", "standard"),
         "exercise": session.exercise,
@@ -408,12 +428,12 @@ async def run_incident(session: IncidentSession, pack_topo: Topology, seed: int,
         await push(600, "narrative", "gate", "diagnosis", "ai", "Approver briefing drafted", narrative["summary"], narrative)
 
     if selected:
-        session.status = "awaiting_approval"
+        transition(session, "awaiting_approval")
         await push(800, "awaiting_approval", "approve", "operator", "info", "Awaiting human approval",
                    f"Approval binds to change {short_hash(selected['change']['hash'])} and target state {short_hash(obs['stateHash'])}. Nothing has touched the demo network.",
                    {"changeHash": selected["change"]["hash"], "targetStateHash": obs["stateHash"]})
     else:
-        session.status = "escalated"
+        transition(session, "escalated")
         await push(800, "escalated", "approve", "operator", "warn", "Escalated to on-call engineer", f"Evidence bundle handed over: {top['title']}. No change is proposed.",
                    {"hypothesis": top})
     return run
@@ -468,16 +488,25 @@ def create_approval(session: IncidentSession, operator: str, comment: str, decis
         raise ValueError("nothing to approve: no candidate passed the gate")
     decided_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     change_hash = run["selected"]["change"]["hash"]
-    return {"runId": run["runId"], "candidateId": run["selected"]["change"]["id"], "changeHash": change_hash, "targetStateHash": run["snapshotHash"],
+    approval = {"schemaVersion": "approval-1", "runId": run["runId"], "candidateId": run["selected"]["change"]["id"], "changeHash": change_hash, "targetStateHash": run["snapshotHash"],
             "operator": operator, "comment": comment, "decision": decision, "decidedAt": decided_at,
-            "token": sha256(f"{run['runId']}|{change_hash}|{run['snapshotHash']}|{operator}|{decision}|{decided_at}")}
+            "operationId": secrets.token_hex(16),
+            "expiresAt": min(time.time() + session.approval_ttl_s, run.get("snapshot", {}).get("collectedAtEpoch", time.time()) + session.approval_ttl_s)}
+    approval["token"] = sign(approval, session.approval_key)
+    return approval
 
 
 async def apply_with_approval(session: IncidentSession, approval: dict[str, Any], emit: Emit | None = None) -> list[dict[str, Any]]:
     """Lab-only apply gateway: the only write path, and only with an approval bound to hash and state."""
+    if session.status in {"closed", "recovery_required"}:
+        if session.approval and session.approval.get("operationId") == approval.get("operationId"):
+            return []
+        raise ValueError("Incident is already finished; a fresh investigation is required")
+    if session.status == "awaiting_approval":
+        transition(session, "applying")
     run, demo = session.run, session.demo
     prior = session.events[-1]
-    rec = Recorder(prior["frame"], demo, emit, session.pace, time.monotonic() - prior["at"] / 1000, session.events, prior["seq"])
+    rec = Recorder(prior["frame"], demo, emit, session.pace, time.monotonic() - prior["at"] / 1000, session.events, prior["seq"], session=session)
     selected = run.get("selected")
     session.approval = approval
 
@@ -491,6 +520,8 @@ async def apply_with_approval(session: IncidentSession, approval: dict[str, Any]
                        "No change applied. The evidence bundle is retained for review.", approval)
     elif not selected:
         await refuse("No candidate passed the evidence gate.", "approval_rejected")
+    elif reason := refusal(session, approval):
+        await refuse(reason, "approval_rejected")
     elif approval["changeHash"] != selected["change"]["hash"] or approval["candidateId"] != selected["change"]["id"]:
         await refuse(f"Approval hash {short_hash(approval['changeHash'])} does not match tested change {short_hash(selected['change']['hash'])}.")
     elif approval["runId"] != run["runId"]:
@@ -502,7 +533,7 @@ async def apply_with_approval(session: IncidentSession, approval: dict[str, Any]
             current = await demo.state_hash()
         except Exception as exc:
             await refuse(f"Could not read target state ({type(exc).__name__}); nothing applied.")
-            session.status = "closed"
+            transition(session, "closed")
             return session.events[prior["seq"]:]
         if current != approval["targetStateHash"]:
             await refuse(f"Target state drifted ({short_hash(approval['targetStateHash'])} → {short_hash(current)}) since the snapshot. Re-observe and re-verify before any change.")
@@ -510,25 +541,49 @@ async def apply_with_approval(session: IncidentSession, approval: dict[str, Any]
             previous = None
             attempted = False
             post: list[dict[str, Any]] = []
+            windows: list[dict[str, Any]] = []
             try:
                 # Capture recovery state before any write: apply may fail after changing one device.
                 previous = await demo.capture_supported()
-                if await demo.state_hash() != current:
+                if reason := refusal(session, approval):
+                    await refuse(reason, "approval_rejected")
+                elif await demo.state_hash() != current:
                     await refuse("Target changed while preparing apply. Re-observe and re-verify.")
                 else:
+                    total = session.postcheck_samples
+                    await rec.push(300, "apply_progress", "apply", "apply", "info", "Writing the approved change",
+                                   f"{' + '.join(describe_step(s) for s in selected['change']['steps'])}. Pre-apply state captured for automatic rollback.",
+                                   {"step": "write", "changeHash": approval["changeHash"]})
                     attempted = True
                     await demo.apply_approved(selected["change"], approval["token"])
-                    after = await demo.observe()
-                    v6 = [{**(await demo.probe(j["id"], "v6")), "kind": "challenge"}
-                          for j in run["topology"]["journeys"] if j["from"] in run["v6Pops"]]
-                    post = [*after["probes"], *v6]
-                    failed = [p for p in post if not p["ok"]]
-                    if failed:
-                        raise RuntimeError(f"{len(failed)} post-change checks failed")
+                    await rec.push(300, "apply_progress", "apply", "apply", "info", "Change written · verifying recovery",
+                                   f"Re-measuring customer journeys {total}×{f', {session.postcheck_interval_s:g} s apart' if total > 1 else ''}. Any failed check rolls the change back.",
+                                   {"step": "verify", "windows": total})
+                    for sample in range(total):
+                        if sample:
+                            await asyncio.sleep(session.postcheck_interval_s)
+                        after = await demo.observe()
+                        v6 = [{**(await demo.probe(j["id"], "v6")), "kind": "challenge"}
+                              for j in run["topology"]["journeys"] if j["from"] in run["v6Pops"]]
+                        post = [*after["probes"], *v6]
+                        windows.append({"sample": sample + 1, "observedAt": datetime.now(UTC).isoformat(), "checks": post})
+                        failed = [p["id"] for p in post if not p["ok"]]
+                        if failed:
+                            await rec.push(0, "apply_progress", "apply", "apply", "fail", f"Check {sample + 1}/{total} failed · rolling back",
+                                           f"{', '.join(failed)} failed after the change. Restoring the pre-apply state.", {"step": "window", "sample": sample + 1, "of": total, "failed": failed})
+                            raise RuntimeError("A post-change observation window failed")
+
+                        def verifying(f: dict[str, Any], after=after) -> None:
+                            f["prod"] = {"probes": _by_id([p for p in after["probes"] if p["kind"] == "journey"]), "alarmNodes": [], "status": "verifying"}
+
+                        await rec.push(300, "apply_progress", "apply", "apply", "ok", f"Check {sample + 1}/{total} passed",
+                                       f"{len(post)} checks passed: customer journeys, negative tests and IPv6 parity.",
+                                       {"step": "window", "sample": sample + 1, "of": total}, verifying)
                     await rec.push(1400, "applied", "apply", "apply", "prod", f"Applied to demo network: {selected['change']['label']}",
                                    "The exact approved change was applied and checked on the demo network.",
                                    {"change": selected["change"], "token": approval["token"], "network": demo.backend})
-                    session.outcome = {"status": "applied", "reason": "post-change checks passed", "postChecks": post}
+                    session.outcome = {"status": "applied", "reason": f"post-change checks passed across {len(windows)} observation window(s)",
+                                       "postChecks": post, "observationWindows": windows, "operationId": approval["operationId"]}
 
                     def restored(f: dict[str, Any]) -> None:
                         f["prod"] = {"probes": _by_id([p for p in after["probes"] if p["kind"] == "journey"]), "alarmNodes": [], "status": "restored"}
@@ -545,14 +600,16 @@ async def apply_with_approval(session: IncidentSession, approval: dict[str, Any]
                         if await demo.state_hash() != current:
                             raise RuntimeError("restored state does not match the pre-apply hash")
                     except Exception as recovery_error:
-                        session.outcome = {"status": "recovery_required", "reason": f"{reason} Rollback could not be verified ({type(recovery_error).__name__}). Operator recovery required.", "postChecks": post}
-                        session.status = "recovery_required"
+                        session.outcome = {"status": "recovery_required", "reason": f"{reason} Rollback could not be verified ({type(recovery_error).__name__}). Operator recovery required.", "postChecks": post,
+                                           "observationWindows": windows, "operationId": approval["operationId"]}
+                        transition(session, "recovery_required")
                         await rec.push(0, "recovery_required", "apply", "apply", "fail", "Operator recovery required", session.outcome["reason"], {"postChecks": post})
                         return session.events[prior["seq"]:]
-                    session.outcome = {"status": "rolled_back", "reason": f"{reason} Pre-apply state restored and hash verified.", "postChecks": post}
+                    session.outcome = {"status": "rolled_back", "reason": f"{reason} Pre-apply state restored and hash verified.", "postChecks": post,
+                                       "observationWindows": windows, "operationId": approval["operationId"]}
                     await rec.push(0, "rolled_back", "apply", "apply", "fail", "Change rolled back — restoration verified", session.outcome["reason"], {"postChecks": post})
 
-    session.status = "closed"
+    transition(session, "closed")
     return session.events[len(session.events) - rec.seq + prior["seq"]:]
 
 

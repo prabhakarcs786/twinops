@@ -3,7 +3,9 @@
  * TestResult, GateDecision, ApprovalRecord) so a FastAPI backend can stream the same shapes.
  */
 
-export type PackId = 'core' | 'enterprise';
+import type { EvidenceSnapshot, IncidentLifecycle, Provenance, TwinCoverage } from '../api/contracts.ts';
+
+export type PackId = 'core' | 'enterprise' | 'branch';
 export type NodeRole = 'pop' | 'core' | 'dns' | 'gateway' | 'service';
 
 export interface TopoNode {
@@ -60,6 +62,9 @@ export type FailureClass =
 export type ProbeKind = 'journey' | 'negative' | 'control' | 'challenge' | 'diagnostic';
 
 export interface ProbeResult {
+  provenance?: Provenance;
+  available?: boolean;
+  diagnostic?: string;
   id: string;
   kind: ProbeKind;
   label: string;
@@ -101,6 +106,7 @@ export interface LogLine {
 }
 
 export interface Observation {
+  snapshot?: EvidenceSnapshot;
   evidenceGaps?: string[];
   capturedAt: string;
   stateHash: string;
@@ -228,6 +234,7 @@ export interface CandidateRecord {
 export type Verdict = 'PASS_UNDER_DEFINED_TESTS' | 'PASS_WITH_WARNINGS' | 'REJECTED' | 'INCONCLUSIVE' | 'ESCALATE';
 
 export interface Reproduction {
+  coverage?: TwinCoverage;
   matched: number;
   total: number;
   affectedReproduced: boolean;
@@ -239,6 +246,8 @@ export interface Reproduction {
 }
 
 export interface ApprovalRecord {
+  expiresAt?: number;
+  operationId?: string;
   runId: string;
   candidateId: string;
   changeHash: string;
@@ -257,6 +266,8 @@ export type Tone = 'info' | 'ok' | 'fail' | 'warn' | 'ai' | 'twin' | 'prod';
 export type Actor = 'harness' | 'observer' | 'guard' | 'diagnosis' | 'twin' | 'experiment' | 'challenge' | 'gate' | 'operator' | 'apply';
 
 export type EventKind =
+  | 'diagnostic_collected'
+  | 'incident_detected'
   | 'fault_injected'
   | 'observed'
   | 'guard'
@@ -274,6 +285,7 @@ export type EventKind =
   | 'approval_recorded'
   | 'approval_rejected'
   | 'drift_detected'
+  | 'apply_progress'
   | 'applied'
   | 'post_check'
   | 'rolled_back'
@@ -316,7 +328,7 @@ export interface Frame {
   prod: {
     probes: Record<string, ProbeResult>;
     alarmNodes: string[];
-    status: 'healthy' | 'incident' | 'restored';
+    status: 'healthy' | 'incident' | 'verifying' | 'restored';
   };
   twin: TwinFrame | null;
   hypotheses: Hypothesis[];
@@ -327,6 +339,7 @@ export interface Frame {
 }
 
 export interface RunEvent {
+  lifecycle?: IncidentLifecycle;
   seq: number;
   at: number;
   kind: EventKind;

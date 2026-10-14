@@ -169,6 +169,8 @@ const connectionEnv = CONNECTED ? {
   TWINOPS_NETWORK_TOKEN: process.env.TWINOPS_NETWORK_TOKEN || randomBytes(32).toString('hex'),
   TWINOPS_TWIN: 'emulated',
   TWINOPS_HARNESS: 'false',
+  // Approved changes go through Metro's apply gateway; set TWINOPS_APPLY_ENABLED=false to keep evidence read-only.
+  TWINOPS_APPLY_ENABLED: setting('TWINOPS_APPLY_ENABLED', 'true'),
   TWINOPS_DATA_DIR: join(ROOT, 'backend', '.data', 'connected'),
 } : {};
 
