@@ -1,5 +1,62 @@
 # TwinOps
 
+**AI that tests and challenges a network fix before a human approves it.**
+
+Google Cloud AI Builder Cup 2026 · **Future of Work & Enterprise Productivity**
+
+TwinOps helps network engineers and change approvers turn scattered incident evidence into a tested repair and a reviewable Proof Pack. The hosted prototype combines Gemini through Vertex AI, an isolated protocol lab, deterministic verification and human approval.
+
+## Live prototype
+
+| Open | Purpose |
+|---|---|
+| [TwinOps workbench](https://twinops-live-705406130795.europe-west1.run.app/workbench) | Investigation, candidate tests, evidence and approval |
+| [Metro Network](https://twinops-live-705406130795.europe-west1.run.app/metro/) | Measured service health and controlled fault exercises |
+| [Product overview](https://twinops-live-705406130795.europe-west1.run.app/) | Problem, workflow and deterministic browser demonstration |
+| [Interactive pitch deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | Ten-slide presentation |
+| [PDF pitch deck](docs/TwinOps_Deck.pdf) | Submission attachment |
+
+Deployment and lab readiness were checked on **15 October 2026**: both apps loaded, Metro's four customer journeys were healthy, and the isolated lab reported ready. The hosted service reported **Vertex AI / Gemini 2.5 Flash** as its configured planner. Configuration and readiness do not establish a completed Gemini repair; model-call, fallback, approval and recovery evidence must be inspected in a saved investigation.
+
+The demo runs one shared lab. Coordinate a session with the project host before injecting a fault; approval and rejection require the host's operator passcode. Keep that credential out of the repository. History is local to the Cloud Run instance and can disappear when the instance is replaced.
+
+## Submission materials
+
+- [Submission article](docs/SUBMISSION.md): what was built, demo, Google Cloud and Gemini integration, architecture, build process, lessons, evidence and limits.
+- [Judge walkthrough](docs/JUDGE_GUIDE.md): inspect the application, follow an investigation and review evidence.
+- [Build log](docs/BUILD_LOG.md): implementation milestones, problems addressed and verification scope.
+- [Demo media](docs/DEMO_MEDIA.md): included screenshots, architecture image and the deferred video handoff.
+- [Final submission checklist](docs/SUBMISSION_CHECKLIST.md): artifact requirements and remaining verification.
+- [Technical & Functional Guide](docs/TwinOps_Technical_and_Functional_Guide.md): engineering details and production roadmap.
+
+**Final owner steps:** record and link a public video under three minutes, then make the repository public and verify anonymous access. Those steps are intentionally pending. Confirm the theme and team details against the registered competition entry before submitting.
+
+### Preview
+
+![Metro Network's deployed dashboard with live journeys and safety guardrails](docs/images/metro-network-healthy.png)
+
+*Hosted readiness snapshot from 15 October 2026: four journeys healthy, synthetic customer counts, no active incident. See the submission article for the architecture and the judge guide for the full repair workflow.*
+
+## Problem and solution
+
+During an outage, engineers correlate alarms, configuration changes, routing, DNS and TLS failures across tools. A plausible fix may restore service while exposing management access or removing a needed IPv6 hotfix. An AI explanation alone does not show that a change is safe to apply.
+
+TwinOps tests competing repairs against a reproduced incident, challenges the strongest candidate, and presents only a candidate that satisfies its defined checks. The approver reviews the exact diff, evidence, limits and rollback before authorizing a change bound to the tested content and target state.
+
+## Google Cloud and AI
+
+| Component | Role in the hosted prototype |
+|---|---|
+| Gemini 2.5 Flash through Vertex AI | Configured for evidence-based hypotheses, typed repair proposals, challenge selection, bounded revisions and approver briefings |
+| Google Gen AI SDK | Sends structured requests; responses are schema-validated and catalogue-checked |
+| Cloud Run, second-generation environment | Hosts TwinOps, Metro Network and two isolated Linux namespace lab networks |
+| Cloud Build and Artifact Registry | Build and store the connected-demo container image |
+| Secret Manager | Supplies the approval credential to the service |
+
+The model proposes; code runs the probes and computes the verdict; a human decides. The model has no shell or device-write tool. Provider errors and rejected outputs are visible as fallbacks in the AI trace. The overview's animations and browser evaluation remain deterministic and are separate from the hosted Gemini planner.
+
+## How it works
+
 TwinOps is a proof of concept for safer autonomous network operations. When a network incident occurs, TwinOps:
 
 1. observes it read-only;
@@ -337,6 +394,6 @@ cd frontend && npm run test:live    # real FastAPI: SSE, approval, refresh/histo
 
 Open `/deck`. Use arrow keys to move between slides and **Save as PDF** to export. To regenerate `docs/TwinOps_Deck.pdf`, run `npm run preview` and then `npm run export:deck` (both in `frontend/`).
 
-The deck loads the latest compatible saved planner comparison when connected to the backend. For an evidence-backed PDF from the development server, run `npm --prefix frontend run export:deck -- http://localhost:5173/deck`. Without report access it states that paired evidence is unavailable. Historic lab timings are labelled with their run date; Gemini and Cloud Run deployment remain unverified until actually exercised.
+The deck loads the latest compatible saved planner comparison when connected to the backend. For an evidence-backed PDF from the development server, run `npm --prefix frontend run export:deck -- http://localhost:5173/deck`. Without report access it states that paired evidence is unavailable. Historical lab timings retain their runbook scope and date. Cloud Run deployment and lab readiness were verified on 15 October 2026; a completed Gemini repair and a paired Gemini benchmark still require retained execution evidence.
 
 Workbench URL options: `?fault=route_misconfig|dns_failure|cert_expiry|unsupported_link_flap`, `?speed=instant`, `?autostart=1`, `?pack=enterprise`, `?engine=local`, `?view=presentation`, `?incident=<saved-id>`.

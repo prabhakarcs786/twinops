@@ -52,9 +52,9 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
           {journeys.map((j) => <li key={j.id}><StatusChip tone={j.ok ? 'ok' : 'fail'}>{j.id}</StatusChip>{j.label}</li>)}
         </ul>}
       </section>
-      {notConfigured && <p className="connection-alert">This deployment runs the simulated network model only. Metro Network and its Containerlab twin need Docker, so they run where you start <code>npm run dev:connected</code>: your machine or the lab VM.</p>}
+      {notConfigured && <p className="connection-alert">No Metro Network connector is configured for this instance. Start <code>npm run dev:connected</code> for the local Docker lab, or use the connected Cloud Run deployment with its Linux namespace lab.</p>}
       {connection?.recoveryRequired && <p role="alert" className="connection-alert">The network requires operator recovery. Further changes are blocked.</p>}
-      <div className="connections-explainer"><span><Radio size={17} aria-hidden="true" /> Automatic issue detection</span><span><Server size={17} aria-hidden="true" /> Isolated Containerlab twin</span><span><ShieldCheck size={17} aria-hidden="true" /> Approval before live changes</span></div>
+      <div className="connections-explainer"><span><Radio size={17} aria-hidden="true" /> Automatic issue detection</span><span><Server size={17} aria-hidden="true" /> Isolated protocol twin</span><span><ShieldCheck size={17} aria-hidden="true" /> Approval before live changes</span></div>
       <section className="connected-issues"><div className="connected-section-heading"><h2>Detected incidents</h2><span>{connection?.issues.length ?? 0} recorded</span></div>
         {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : notConfigured ? 'No connected application' : 'Waiting for the network application'}</h3><p>{notConfigured ? 'Open the workbench to investigate an incident on the simulated network model.' : 'Open the workbench to see the network and inject a lab fault. TwinOps detects new issues automatically.'}</p></div> :
           connection.issues.map((issue, index) => {

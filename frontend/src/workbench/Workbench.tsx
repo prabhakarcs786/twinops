@@ -387,7 +387,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const verdict = verdictVisible ? view?.run.verdict : undefined;
   const runId = view?.run.runId ?? live?.id ?? session?.run.runId ?? '';
   const seed = live?.seed ?? session?.run.seed;
-  const twinLabel = (view?.run.versions.twin ?? backend?.twin.backend) === 'emulated' ? 'Containerlab emulated twin' : 'model twin';
+  const twinLabel = (view?.run.versions.twin ?? backend?.twin.backend) === 'emulated' ? 'emulated protocol twin' : 'model twin';
   const connected = view?.run.source ? view.run.source.kind === 'connected_application' : Boolean(backend?.connectedApplication);
   const connectedControls = connected || Boolean(backend?.connectedApplication);
   const resolving = backend === undefined;
@@ -700,7 +700,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           canApprove={!live || Boolean(lifecycle?.canApprove) && (!backend?.authenticationRequired || backend.role === 'approver')}
           busy={decisionBusy}
           error={decisionError}
-          targetLabel={connected ? 'Metro Network (Containerlab prod lab) only' : live && backend?.twin.backend === 'emulated' ? 'Containerlab prod lab only' : 'demo network only'}
+          targetLabel={connected ? 'Metro Network application lab only' : live && backend?.twin.backend === 'emulated' ? 'emulated application lab only' : 'demo network only'}
           onClose={() => setDialogOpen(false)}
           onDecide={(...args) => void onDecide(...args)}
         />

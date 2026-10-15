@@ -183,7 +183,7 @@ for (const configAvailable of [true, false]) {
     expect(metricBox!.y).toBeLessThan((await verdict.boundingBox())!.y);
     await page.screenshot({ path: `test-results/workbench-saved-${configAvailable}-${test.info().project.name}.png` });
     await page.getByText('Runtime details', { exact: true }).click();
-    await expect(page.locator('.runtime-content')).toContainText('Containerlab emulated twin');
+    await expect(page.locator('.runtime-content')).toContainText('emulated protocol twin');
     await page.getByText('Runtime details', { exact: true }).click();
     await page.getByRole('button', { name: 'Investigation detail', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Metro Network', exact: true })).toBeVisible();

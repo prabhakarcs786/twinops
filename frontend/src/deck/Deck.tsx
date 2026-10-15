@@ -5,7 +5,7 @@ import { fetchReports, type EvaluationReport } from '../api/live.ts';
 import { Link } from '../lib/router.tsx';
 import '../styles/deck.css';
 
-/** Pitch deck: 10 slides, keyboard navigable, prints to a 16:9 PDF (one slide per page). Every number is measured. */
+/** Pitch deck: 10 slides, keyboard navigable, prints to a 16:9 PDF. Historical measurements retain their scope and date. */
 
 interface Slide {
   title: string;
@@ -66,6 +66,7 @@ const SLIDES: Slide[] = [
     body: (
       <div className="d-hero">
         <Brand />
+        <p className="d-eyebrow">Google Cloud AI Builder Cup 2026<br />Future of Work &amp; Enterprise Productivity</p>
         <h2>
           What if AI had to <span className="grad-text">prove its fix</span> before touching production?
         </h2>
@@ -117,7 +118,7 @@ const SLIDES: Slide[] = [
         <div className="d-cols d-cols-3">
           <div className="d-card">
             <p className="d-eyebrow">Allowed to be wrong safely</p>
-            <p>Candidates are tested on an isolated twin. Probes are simulated in the model twin and real network traffic in Containerlab. Failures remain outside the target network.</p>
+            <p>Candidates are tested on an isolated twin. The Cloud Run lab runs real routing, DNS and TLS in Linux network namespaces. The browser engine uses simulated probes.</p>
           </div>
           <div className="d-card">
             <p className="d-eyebrow">Attacks its own answer</p>
@@ -132,7 +133,7 @@ const SLIDES: Slide[] = [
     ),
   },
   {
-    title: 'Live demo: one real run on the emulated lab',
+    title: 'Historical lab run: a tested routing repair',
     body: (
       <div className="d-cols">
         <ol className="d-run">
@@ -170,15 +171,15 @@ const SLIDES: Slide[] = [
         <div className="d-arch-row">
           <div className="d-box">Web workbench · React<small>SSE event stream, evidence tabs, approval dialog</small></div>
           <div className="d-arrow" aria-hidden="true">⇄</div>
-          <div className="d-box d-box-strong">FastAPI + SSE<small>Cloud Run packaging; deployment unverified · incident evidence in local SQLite</small></div>
+          <div className="d-box d-box-strong">FastAPI + SSE · Cloud Run<small>Live deployment checked 15 Oct 2026 · local, ephemeral SQLite evidence</small></div>
         </div>
         <div className="d-arch-grid">
-          <div className="d-box d-ai">Planner<small>Ollama tested locally · Gemini/Vertex adapters · bounded feedback and runbook fallback</small></div>
-          <div className="d-box d-twin">Twin backend<small>model twin (Cloud Run) · Containerlab lab: FRR BGP, CoreDNS, nginx TLS</small></div>
+          <div className="d-box d-ai">Gemini · Vertex AI<small>Gemini 2.5 Flash configured · typed proposals, bounded revisions, visible fallback</small></div>
+          <div className="d-box d-twin">Isolated protocol lab<small>Cloud Run: separate application + twin networks in Linux namespaces · FRR, CoreDNS, nginx</small></div>
           <div className="d-box d-ok">Proof Gate G1–G8<small>deterministic code: reproduction, restore, regression, challenges, policy, rollback, latency, human</small></div>
           <div className="d-box d-prod">Apply gateway<small>approval bound to change + state · post-checks · verified rollback or operator recovery</small></div>
         </div>
-        <p className="d-foot">Same event and evidence model in the browser engine, the Python engine and the lab, checked by 40 parity cases.</p>
+        <p className="d-foot">Cloud Build → Artifact Registry → Cloud Run. Vertex AI provides model access; Secret Manager holds the operator credential. Deployment checks establish lab readiness; model-call and recovery evidence belong to each run.</p>
       </div>
     ),
   },
@@ -187,7 +188,7 @@ const SLIDES: Slide[] = [
     body: (
       <div className="d-cols">
         <div className="d-card d-card-ai">
-          <p className="d-eyebrow">Bounded model reasoning</p>
+          <p className="d-eyebrow">Gemini through the Google Gen AI SDK</p>
           <ul className="d-list">
             <li>Ranked hypotheses that cite evidence IDs (JSON schema)</li>
             <li>Fix proposals from a typed action catalogue</li>
@@ -256,7 +257,7 @@ const SLIDES: Slide[] = [
           <p>Past successful changes become candidates for fresh verification. A similar incident never imports an old approval.</p>
         </div>
         <p className="d-foot d-span">
-          A read-only review trial records time and gate agreement for the same candidate with raw evidence and with its Proof Pack. Human trials are pending; no time savings are claimed.
+          Theme: Future of Work &amp; Enterprise Productivity. Read-only trials compare review time and gate agreement with raw evidence and a Proof Pack. Human trials are pending; no time savings are claimed.
         </p>
       </div>
     ),
@@ -271,7 +272,7 @@ const SLIDES: Slide[] = [
               <strong>Scenario packs</strong>: regional telecom core and hybrid enterprise today. The topology, journeys and fault catalogue are data.
             </li>
             <li>
-              <strong>Twin backends</strong> behind one protocol: an in-process model twin, then a Containerlab lab with real routing, DNS and TLS, then Kubernetes (kind), cloud-config sandboxes and CI/CD.
+              <strong>Twin backends</strong>: a model twin, local Containerlab, and the deployed Linux namespace lab share one contract. Kubernetes, cloud-config sandboxes and CI/CD are future adapters.
             </li>
             <li>
               <strong>Planner providers</strong>: Gemini API, Vertex AI, any OpenAI-compatible endpoint, or replay. The planner can change without touching the Proof Gate.
@@ -290,22 +291,25 @@ const SLIDES: Slide[] = [
     ),
   },
   {
-    title: 'Roadmap and ask',
+    title: 'Try TwinOps and take it into a shadow pilot',
     body: (
       <div className="d-cols">
         <div>
           <ol className="d-list d-num-list">
-            <li>Now built: incident-memory retesting, changed-state challenges and anonymous review trials</li>
-            <li>Policy as code (OPA) and real telemetry (Prometheus, OpenTelemetry)</li>
+            <li>Now deployed: TwinOps + Metro Network + isolated protocol lab on Cloud Run; Gemini configured through Vertex AI</li>
+            <li>Next: retain Gemini recovery evidence and measure operator review time; production identity, storage and monitoring</li>
             <li>Read-only shadow mode next to a real NOC: verdicts recorded, nothing applied</li>
           </ol>
           <p className="d-lead">
             <strong>Ask:</strong> one operations team, an approved LLM endpoint and a lab slice for a four-week shadow pilot.
           </p>
         </div>
-        <blockquote className="d-quote">
-          “The AI isn’t impressive because it knew the answer. It’s impressive because it was allowed to be wrong safely until it could prove one.”
-        </blockquote>
+        <div className="d-card">
+          <p className="d-eyebrow">Live prototype</p>
+          <p><a href="https://twinops-live-705406130795.europe-west1.run.app/workbench">Open TwinOps workbench ↗</a></p>
+          <p><a href="https://twinops-live-705406130795.europe-west1.run.app/metro/">Open Metro Network ↗</a></p>
+          <p className="d-foot">Approval requires the host’s operator passcode. Coordinate a shared-lab session. History is lost when the Cloud Run instance is replaced.</p>
+        </div>
       </div>
     ),
   },

@@ -120,7 +120,7 @@ export function GenAiSplit() {
               <li>Choose and parameterise fixes from the typed catalogue</li>
               <li>Pick challenge scenarios against the proposed fix</li>
               <li>Narrate the Proof Pack for the human approver</li>
-              <li>Turn a free-text incident ticket into structured context</li>
+              <li>Answer questions about a captured investigation with cited evidence</li>
             </ul>
           </article>
           <article className="split-card split-code" data-reveal onPointerMove={spotlight}>
@@ -137,7 +137,7 @@ export function GenAiSplit() {
           </article>
         </div>
         <p className="split-note" data-reveal>
-          <StatusChip tone="info">This build</StatusChip> Both reasoning roles run as a deterministic runbook planner, so every result on this site is reproducible. A model adapter plugs in behind the same typed contract — and will be measured against this runbook baseline, not assumed to beat it.
+          <StatusChip tone="info">Cloud Run demo</StatusChip> The deployed workbench is configured for Gemini 2.5 Flash through Vertex AI, with real routing, DNS and TLS in an isolated protocol lab. The animations and evaluation on this overview use the deterministic browser engine. Model calls and runbook fallbacks are recorded in each investigation’s AI trace; the Proof Gate always runs in code.
         </p>
       </div>
     </section>
@@ -192,7 +192,7 @@ export function Architecture() {
 
 export function Horizon() {
   const items = [
-    { h: 'H1 · now', title: 'Network incidents, synthetic', body: 'One topology, three fault families, two scenario packs (regional core, hybrid enterprise). Model twin today; emulated twin (Containerlab + FRR) behind the same backend interface.' },
+    { h: 'H1 · now', title: 'Protocol lab on Google Cloud', body: 'TwinOps and Metro Network are deployed on Cloud Run with separate lab networks for the application and its twin. FRR routing, CoreDNS and nginx TLS run in Linux network namespaces. Synthetic scenarios cover routing, DNS and certificate faults.' },
     { h: 'H2 · pilot', title: 'Shadow mode on real telemetry', body: 'Read-only adapters against an approved non-production estate. Scenario packs for cloud infrastructure, Kubernetes and CI/CD, each with its own typed catalogue.' },
     { h: 'H3 · platform', title: 'ProofGate for any agent', body: 'Any AI agent’s action must pass reproduce → experiment → challenge → policy → approval before it executes. Verification as a product, not a feature.' },
   ];
