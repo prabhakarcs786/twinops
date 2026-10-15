@@ -48,3 +48,8 @@ backend/.data/
 ### Telekom local runtime and context ###
 .telekom/
 frontend/.playwright-data/
+
+### Local video production (public showcase is hosted on YouTube) ###
+# Final run evidence is retained separately in docs/evidence/.
+# Historical production files are archived under the ignored .local/ directory.
+/docs/video/

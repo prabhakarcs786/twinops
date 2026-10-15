@@ -2,6 +2,10 @@
 
 TwinOps demonstrates evidence-based network repair: an AI planner proposes changes, an isolated twin tests them, deterministic gates evaluate the results and a human authorizes the exact tested change.
 
+**[Watch the 2:50 demo on YouTube](https://youtu.be/7edjKnZXiJA).** It follows a recorded Metro routing fault through Gemini investigation, twin testing, owner-authorized approval and measured recovery. You can view this workflow without operating the shared lab or needing its approval credential.
+
+The [sanitized run record](evidence/recorded-demo.json) preserves model-call provenance, approval binding and recovery checks even if the hosted instance's saved history is replaced. The [technical guide](TECHNICAL_GUIDE.md) explains the implementation and its limits.
+
 ## Open the prototype
 
 - [TwinOps workbench](https://twinops-live-705406130795.europe-west1.run.app/workbench)

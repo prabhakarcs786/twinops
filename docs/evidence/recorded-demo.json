@@ -1,0 +1,439 @@
+{
+  "schemaVersion": "twinops-video-evidence-1",
+  "incidentId": "inc-net-a58999961e224d95b7f1bfffe7ed4ae6",
+  "verifiedAt": "2026-10-15T09:35:52.119802+00:00",
+  "status": "applied",
+  "incidentStatus": "closed",
+  "verified": true,
+  "captureKind": "Actual hosted live lab rehearsal; browser actions recorded during the run",
+  "sourceBaseUrl": "https://twinops-live-705406130795.europe-west1.run.app",
+  "sourceEndpoints": {
+    "incident": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6",
+    "events": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6/events?follow=false",
+    "metro": "/metro/api/dashboard",
+    "proof-pack": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6/proof-pack?format=json"
+  },
+  "sourceSha256": {
+    "incident": "1d6224ef2613f9eb46db03a403f92d5e99efaed110b97bad6d4c0d12ab8429a2",
+    "events": "24d61c2e31ffc4744562e1cc6229dbd7258fef217e327b430a9a0066235e51ed",
+    "metro": "10f08757770c0fdb2043e1d5368a1b1b8f592a6fc695f52ec99858df51cb1ea2",
+    "proof-pack": "71fc74fce42a841b4ea7a2055df2dfba7dc2474648b8808ed16954281394e1da"
+  },
+  "planner": {
+    "kind": "llm",
+    "provider": "vertex",
+    "model": "gemini-2.5-flash"
+  },
+  "gemini": {
+    "modelCalls": 10,
+    "tokens": 26594,
+    "modelLatencyMs": 16521,
+    "fallbacks": 1,
+    "discardedValidationItems": 2,
+    "replayedCalls": 0,
+    "calls": [
+      {
+        "role": "diagnose",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 2759,
+        "tokens": 3876,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "diagnose",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 1901,
+        "tokens": 3972,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "diagnose",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 1968,
+        "tokens": 4010,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "propose",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 3075,
+        "tokens": 3420,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "challenge",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 912,
+        "tokens": 679,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "challenge",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 698,
+        "tokens": 631,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "revise",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 1516,
+        "tokens": 3410,
+        "fallback": true,
+        "replay": false,
+        "discarded": [
+          "step 2: unexpected parameter value",
+          "step 2: unexpected parameter via"
+        ],
+        "candidateId": null
+      },
+      {
+        "role": "challenge",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 657,
+        "tokens": 625,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      },
+      {
+        "role": "revise",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 1695,
+        "tokens": 3750,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": "cand-C2"
+      },
+      {
+        "role": "narrate",
+        "model": "gemini-2.5-flash",
+        "provider": "vertex",
+        "call": true,
+        "latencyMs": 1340,
+        "tokens": 2221,
+        "fallback": false,
+        "replay": false,
+        "discarded": [],
+        "candidateId": null
+      }
+    ]
+  },
+  "failingJourneyIds": [
+    "J1",
+    "J3"
+  ],
+  "selected": {
+    "id": "cand-A",
+    "label": "A · Remove the problematic prefix-list entry",
+    "steps": [
+      {
+        "action": "remove_rule",
+        "target": "B17",
+        "params": {
+          "seq": 30
+        }
+      }
+    ],
+    "origin": "llm",
+    "rationale": "The hypothesis states that the 'deny 10.20.0.0/15' rule (seq 30) is causing the route rejections for BER and HAM customers. Removing this specific rule should restore connectivity for these journeys without affecting other filtering rules.",
+    "hash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba",
+    "decision": "pass",
+    "touchedNodes": [
+      "B17"
+    ],
+    "gates": [
+      {
+        "id": "G1",
+        "status": "pass",
+        "reason": "10/10 symptoms reproduced in twin"
+      },
+      {
+        "id": "G2",
+        "status": "pass",
+        "reason": "every affected journey succeeds in the twin"
+      },
+      {
+        "id": "G3",
+        "status": "pass",
+        "reason": "unaffected journeys, negative tests and positive control unchanged"
+      },
+      {
+        "id": "G4",
+        "status": "pass",
+        "reason": "survived 4 challenges"
+      },
+      {
+        "id": "G5",
+        "status": "pass",
+        "reason": "allowed action · blast radius 1 node"
+      },
+      {
+        "id": "G6",
+        "status": "pass",
+        "reason": "rollback rehearsed in twin — state hash restored"
+      },
+      {
+        "id": "G7",
+        "status": "pass",
+        "reason": "within latency budget, no session impact"
+      },
+      {
+        "id": "G8",
+        "status": "pending",
+        "reason": "requires a human approval bound to this change hash"
+      }
+    ],
+    "rollback": {
+      "rehearsed": true,
+      "matches": true,
+      "restoredHash": "8fa762b7c2e8c134bfe130ff377e5270d7c05984f31cb009c222c7138a39aa23"
+    },
+    "challenges": [
+      {
+        "kind": "dual_stack",
+        "ok": true,
+        "detail": "3 IPv6 journeys succeed (real AAAA + TLS over IPv6)",
+        "classification": "measured"
+      },
+      {
+        "kind": "secondary_failure",
+        "ok": true,
+        "detail": "with FRA paused, all remaining journeys succeed",
+        "classification": "measured"
+      },
+      {
+        "kind": "surge_x3",
+        "ok": true,
+        "detail": "Tripled probe concurrency: nine HTTP attempts per journey; 0 failing or over-budget samples. This does not model production traffic volume.",
+        "classification": "measured"
+      },
+      {
+        "kind": "session_continuity",
+        "ok": true,
+        "detail": "no session-affecting process change",
+        "classification": "model-derived"
+      }
+    ]
+  },
+  "candidates": [
+    {
+      "id": "cand-A",
+      "origin": "llm",
+      "label": "A · Remove the problematic prefix-list entry",
+      "decision": "pass",
+      "restored": true,
+      "failedGateIds": []
+    },
+    {
+      "id": "cand-B",
+      "origin": "llm",
+      "label": "B · Rollback B17 configuration to r-2041",
+      "decision": "superseded",
+      "restored": true,
+      "failedGateIds": [
+        "G4"
+      ]
+    },
+    {
+      "id": "cand-B2",
+      "origin": "revision",
+      "label": "B′ · Remove EDGE-IN seq 30 only",
+      "decision": "pass",
+      "restored": true,
+      "failedGateIds": []
+    },
+    {
+      "id": "cand-C",
+      "origin": "llm",
+      "label": "C · Restart routing service on B17",
+      "decision": "superseded",
+      "restored": false,
+      "failedGateIds": [
+        "G2",
+        "G3"
+      ]
+    },
+    {
+      "id": "cand-C2",
+      "origin": "revision",
+      "label": "C′ · C · Restart routing service on B17, flush DNS cache, and renew certifi",
+      "decision": "rejected",
+      "restored": false,
+      "failedGateIds": [
+        "G2",
+        "G3",
+        "G5"
+      ]
+    }
+  ],
+  "reproduction": {
+    "matched": 10,
+    "total": 10,
+    "passed": true
+  },
+  "writesDuringDiagnosis": 0,
+  "approval": {
+    "decision": "approve",
+    "operator": "owner-authorized-showcase",
+    "candidateId": "cand-A",
+    "changeHash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba",
+    "targetStateHash": "84349bb43c0aa145becc5c265b30fdb2318d22749e6f6517ba58973a6ba941e2",
+    "matchesTestedChangeAndState": true,
+    "credentialRedacted": true
+  },
+  "postCheckWindows": [
+    {
+      "sample": 1,
+      "observedAt": "2026-10-15T09:35:02.538133+00:00",
+      "passed": 11,
+      "total": 11,
+      "ids": [
+        "J1",
+        "J2",
+        "J3",
+        "J4",
+        "NEG-1",
+        "NEG-2",
+        "CTRL-1",
+        "J1-v6",
+        "J2-v6",
+        "J3-v6",
+        "J4-v6"
+      ]
+    },
+    {
+      "sample": 2,
+      "observedAt": "2026-10-15T09:35:05.609993+00:00",
+      "passed": 11,
+      "total": 11,
+      "ids": [
+        "J1",
+        "J2",
+        "J3",
+        "J4",
+        "NEG-1",
+        "NEG-2",
+        "CTRL-1",
+        "J1-v6",
+        "J2-v6",
+        "J3-v6",
+        "J4-v6"
+      ]
+    },
+    {
+      "sample": 3,
+      "observedAt": "2026-10-15T09:35:08.611745+00:00",
+      "passed": 11,
+      "total": 11,
+      "ids": [
+        "J1",
+        "J2",
+        "J3",
+        "J4",
+        "NEG-1",
+        "NEG-2",
+        "CTRL-1",
+        "J1-v6",
+        "J2-v6",
+        "J3-v6",
+        "J4-v6"
+      ]
+    }
+  ],
+  "finalPostChecks": {
+    "passed": 11,
+    "total": 11,
+    "ids": [
+      "J1",
+      "J2",
+      "J3",
+      "J4",
+      "NEG-1",
+      "NEG-2",
+      "CTRL-1",
+      "J1-v6",
+      "J2-v6",
+      "J3-v6",
+      "J4-v6"
+    ]
+  },
+  "recoveredJourneys": {
+    "passed": 4,
+    "total": 4,
+    "ids": [
+      "J1",
+      "J2",
+      "J3",
+      "J4"
+    ]
+  },
+  "guardrails": {
+    "passed": 3,
+    "total": 3,
+    "ids": [
+      "NEG-1",
+      "NEG-2",
+      "CTRL-1"
+    ]
+  },
+  "metroIssueStatus": "resolved",
+  "metroCheckedAt": 1792056947.607114,
+  "verdict": "PASS_UNDER_DEFINED_TESTS",
+  "computeMs": 51927.3,
+  "untestedConditions": [
+    "Behaviour beyond the emulated lab images (FRR, CoreDNS, nginx on Linux containers) — not production vendor hardware.",
+    "Routing convergence timing and transient packet loss during the change.",
+    "Production traffic volume and long-lived session continuity; the lab tests tripled probe concurrency and derives session impact from configuration.",
+    "Concurrent faults other than the tested secondary failure.",
+    "Physical layer: optics, CRC errors and link flaps are outside twin fidelity.",
+    "Journeys from MUC were outside the twin slice and not individually tested."
+  ],
+  "editorialNotes": [
+    "Selected A is directly model-proposed; the investigation is not fallback-free.",
+    "Archived rollback B restored initial journeys but failed the HAM IPv6 challenge.",
+    "B2 is the runbook revision after a model revision failed schema validation.",
+    "Session-continuity challenge is model-derived; surge means tripled probe concurrency, not production traffic.",
+    "Topology and customer counts are synthetic; the lab uses real FRR/CoreDNS/nginx protocol services.",
+    "G8 remains pending in immutable preapproval candidate gates; the separate approval and applied outcome prove the completed decision.",
+    "This is one successful rehearsal and is not a production reliability or productivity measurement."
+  ]
+}

@@ -7,6 +7,7 @@ import copy
 import hmac
 import json
 import os
+import shlex
 import time
 import uuid
 from collections import deque
@@ -110,7 +111,15 @@ def journey_rows(obs: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 
 def verify_commands(settings: Settings, topo: dict[str, Any]) -> dict[str, Any]:
-    """Read-only commands a sceptic can run against the same prod containers the probes use."""
+    """Read-only operator commands against the same lab nodes the probes use."""
+    def node_exec(node: str) -> str:
+        name = container('prod', node)
+        if settings.lab_runtime == 'netns':
+            registry = runtime_dir(settings) / 'netns.json'
+            lookup = f'import json; print(json.load(open({str(registry)!r}))[{name!r}])'
+            return f'nsenter -t "$(python3 -c {shlex.quote(lookup)})" -n -m -p --'
+        return f'docker exec {name}'
+
     def dig(pop: Any, host: str) -> str:
         return f"dig +short +time=1 +tries=1 -b {pop.p2p_pop} @{DNS['primary']} -p {DNS_COLD_PORT} {host}"
 
@@ -119,18 +128,25 @@ def verify_commands(settings: Settings, topo: dict[str, Any]) -> dict[str, Any]:
         pop = POPS[next(i for i in range(4) if pop_by_index(topo, i)['id'] == journey['from'])]
         host = journey['host']
         journeys[journey['id']] = (
-            f"docker exec {container('prod', pop.container)} sh -c 'curl -sS -o /dev/null -w \"HTTP %{{http_code}} in %{{time_total}}s\\n\" "
+            f"{node_exec(pop.container)} sh -c 'curl -sS -o /dev/null -w \"HTTP %{{http_code}} in %{{time_total}}s\\n\" "
             f"--connect-timeout 2 --max-time 4 --cacert /lab/ca.crt --interface {pop.customer} "
             f"--resolve {host}:443:$({dig(pop, host)}) https://{host}/'")
     cert = runtime_dir(settings) / 'prod' / 'gw1' / 'certs' / 'v4.crt'
     with contextlib.suppress(ValueError):
         cert = cert.relative_to(REPO_ROOT)
     devices = [
-        {'topic': 'route', 'label': 'Route filter on core router B17', 'command': f"docker exec {container('prod', 'b17')} vtysh -c 'show ip prefix-list EDGE-IN'"},
-        {'topic': 'dns', 'label': 'Address DNS-1 returns for svc.demo', 'command': f"docker exec {container('prod', POPS[0].container)} {dig(POPS[0], 'svc.demo')}"},
-        {'topic': 'tls', 'label': 'Certificate GW-1 is serving', 'command': f'openssl x509 -noout -subject -enddate -in {cert}'},
+        {'topic': 'route', 'label': 'Route filter on core router B17', 'command': f"{node_exec('b17')} vtysh -c 'show ip prefix-list EDGE-IN'"},
+        {'topic': 'dns', 'label': 'Address DNS-1 returns for svc.demo', 'command': f"{node_exec(POPS[0].container)} {dig(POPS[0], 'svc.demo')}"},
+        {'topic': 'tls', 'label': 'Certificate GW-1 is serving', 'command': f'openssl x509 -noout -subject -enddate -in {shlex.quote(str(cert))}'},
     ]
-    return {'journeys': journeys, 'devices': devices}
+    instructions = (
+        'Operator commands: run inside this service instance’s lab user namespace, with access to its runtime files. '
+        'The hosted demo does not expose a terminal. Public viewers can inspect the measured probes and device evidence above.'
+        if settings.lab_runtime == 'netns' else
+        'These read-only commands run the same checks against the same live containers. '
+        'Run them from the repository root on the machine running the Docker lab.'
+    )
+    return {'journeys': journeys, 'devices': devices, 'instructions': instructions}
 
 
 def investigation_closed(issue: dict[str, Any] | None) -> bool:
@@ -309,7 +325,8 @@ class NetworkState:
         operating = self.activity is not None or bool(self.operation and self.operation['status'] in ('applying', 'restoring'))
         exercise_ready = self.ready and not self.recovery and not operating
         data = {'name': 'Metro Network', 'ready': self.ready, 'error': self.error, 'checkedAt': self.checked_at,
-                'backend': 'Containerlab · FRR / CoreDNS / nginx', 'observation': self.observation,
+                'backend': f"{'Linux network namespaces' if self.settings.lab_runtime == 'netns' else 'Containerlab'} · FRR / CoreDNS / nginx",
+                'observation': self.observation,
                 'topology': self.topo, 'issue': self.issue, 'history': self.history[-50:], 'recoveryRequired': self.recovery and not in_flight,
                 'recoveryReason': None if in_flight else self.recovery_reason, 'activity': dict(self.activity) if self.activity else None,
                 'busy': self.lock.locked(), 'operation': self.operation['status'] if self.operation else None,

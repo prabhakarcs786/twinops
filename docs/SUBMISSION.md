@@ -20,7 +20,7 @@ The idea is simple: an AI can be wrong while exploring a repair, but its proposa
 | Product overview | [TwinOps overview](https://twinops-live-705406130795.europe-west1.run.app/) |
 | Presentation | [PDF deck](TwinOps_Deck.pdf) and [interactive deck](https://twinops-live-705406130795.europe-west1.run.app/deck) |
 | Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - owner will make public as a final step |
-| Public demo video | Pending final recording; add the public URL after recording, with duration under three minutes |
+| Public demo video | [Watch TwinOps on YouTube](https://youtu.be/7edjKnZXiJA) — 2:50 recorded repair showcase |
 | Judge instructions | [Judge guide](JUDGE_GUIDE.md) |
 
 Competition references: [published requirements](https://aibuildercup.com/themes.html) and [submission FAQ](https://aibuildercup.com/Faqs.html).
@@ -38,7 +38,7 @@ Competition references: [published requirements](https://aibuildercup.com/themes
 5. Have the authorized host approve the exact tested change, then compare fresh recovery probes in both apps and export the Proof Pack.
 6. After the exercise finishes, check that the unsupported link-flap case stops or escalates without guessing a repair.
 
-Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [media notes](DEMO_MEDIA.md) identify the included images and the deferred recording.
+Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/7edjKnZXiJA) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
 
 ## Why This Problem Matters
 
@@ -67,7 +67,7 @@ The hosted configuration selects **Gemini 2.5 Flash through Vertex AI**, accesse
 
 The model cannot run a shell command, alter the tests, calculate its own authoritative verdict or approve its own action. Structured output is checked against schemas and an allow-listed action catalogue. Instruction-like text in device logs is treated as untrusted data. Fixed policy checks and mandatory challenges remain in code.
 
-AI trace records distinguish model requests, rejected output and runbook fallbacks. The readiness review established the configured provider and model; a completed Gemini repair and model-versus-runbook benchmark still need retained execution evidence. The overview's animations and browser evaluation intentionally use the deterministic engine.
+AI trace records distinguish model requests, rejected output and runbook fallbacks. The [recorded hosted repair](evidence/recorded-demo.json) retains ten actual Vertex/Gemini calls, one schema-validation fallback and two discarded validation items. The selected repair was directly model-proposed. A controlled model-versus-runbook benchmark remains separate work. The overview's animations and browser evaluation intentionally use the deterministic engine.
 
 ## Architecture
 
@@ -87,7 +87,7 @@ AI trace records distinguish model requests, rejected output and runbook fallbac
 | Cloud Build and Artifact Registry | Build and store the deployment image |
 | Secret Manager | Supply the operator approval credential |
 
-The deployed service is in `europe-west1`. Cloud Run uses Linux network namespaces instead of privileged Docker; local development uses Containerlab. See the deck's architecture diagram, [deployment script](../deploy/cloudrun-lab.sh), [Cloud Run entrypoint](../backend/twinops/cloudrun.py) and [technical guide](TwinOps_Technical_and_Functional_Guide.md#5-architecture).
+The deployed service is in `europe-west1`. Cloud Run uses Linux network namespaces instead of privileged Docker; local development uses Containerlab. See the deck's architecture diagram, [deployment script](../deploy/cloudrun-lab.sh), [Cloud Run entrypoint](../backend/twinops/cloudrun.py) and [technical guide](TECHNICAL_GUIDE.md#architecture).
 
 ## What Makes It Different
 
@@ -105,20 +105,17 @@ The implementation grew from a deterministic incident engine into a connected, c
 4. **Make the human decision inspectable.** Decision review shows evidence age, coverage, changes, warnings and rollback. Approval is bound to the exact tested content and target state.
 5. **Move the connected lab onto Cloud Run.** The hosted runtime uses isolated Linux network namespaces in place of privileged Docker. The submission review then checked deployment readiness and corrected descriptions that still referred only to the earlier runbook build.
 
-These are retrospective implementation notes, not a verbatim prompt transcript. The [build log](BUILD_LOG.md) links the milestones to repository evidence and records the problems and remaining checks.
+These are retrospective implementation notes, not a verbatim prompt transcript. The [technical guide](TECHNICAL_GUIDE.md#source-map) links the main implementation components, and the repository history retains the milestones.
 
 ## Build and Verification
 
 | Evidence | Established result | Scope |
 |---|---|---|
-| [Hosted readiness review](validation/deployment-readiness.json), 15 Oct 2026 | Both apps loaded; the connector and twin reported ready; four customer journeys and three guardrail/control probes passed | Read-only deployment review, not an end-to-end repair |
-| [Browser inspection](validation/deployment-readiness.json), 15 Oct 2026 | Workbench and Metro idle pages rendered at desktop and 390 px mobile widths, with no observed browser errors; desktop axe scans reported no violations | Inspected idle states; not a complete accessibility audit |
-| [Foundation evaluation](validation/foundation-evaluation.json), 13 Oct 2026 | 320 synthetic cases: 200 verified repairs, 120 abstentions, zero unsafe passes; 13/13 controls passed | Deterministic runbook and model twin; zero model calls; exercised implementation seeds |
-| Historical local lab runs, 9 Oct 2026 | Routing 58.5 s, DNS 41.1 s, certificate 34.4 s, unsupported fault 18.3 s | One runbook run per fault on local Containerlab; not hosted Gemini timing |
-| Gemini end-to-end repair | Retained execution evidence pending | Configuration alone does not prove a successful model call or repair |
+| [Recorded hosted repair](evidence/recorded-demo.json), 15 Oct 2026 | Ten actual Vertex/Gemini calls, one fallback, zero diagnosis writes; approved repair applied; eleven checks passed in each of three recovery windows; four journeys and three controls healthy afterward | One recorded protocol-lab routing rehearsal; not a production reliability or productivity study |
+| [Foundation evaluation](evidence/foundation-evaluation.json), 13 Oct 2026 | 320 synthetic cases: 200 verified repairs, 120 abstentions, zero unsafe passes; 13/13 controls passed | Deterministic runbook and model twin; zero model calls; exercised implementation seeds |
 | Operator productivity | Human review trials pending | No measured MTTR reduction, time savings or production ROI claimed |
 
-The unsupported fault and missing-evidence cases are expected opportunities to stop or escalate, not failed repairs hidden in a success rate. A recorded Gemini demonstration should include AI trace, fallback counts, selected change, human decision and fresh recovery probes.
+The unsupported fault and missing-evidence cases are expected opportunities to stop or escalate, not failed repairs hidden in a success rate. The recorded demo retains AI-call provenance, fallback counts, the selected change, approval binding and fresh recovery probes. Browser automation executed approval on the project owner's explicit instruction; private credential entry and full approval tokens are omitted from the public record.
 
 ## Impact and Measurement Plan
 
@@ -140,10 +137,10 @@ The hosted prototype exercises three supported fault families: routing policy, D
 
 Today's service is a single shared demo. SQLite, active tasks and lab state are instance-local; history can disappear on replacement or scale-down. Concurrent visitors share one lab and must coordinate exercises. Approval uses a shared operator credential rather than individual enterprise SSO. Customer counts and topology are synthetic, and defined twin checks are not a universal safety guarantee.
 
-The next delivery steps are retained Gemini execution evidence, an exploratory operator study and a read-only shadow pilot. Wider adoption requires durable storage and coordination, individual identity and authorization, per-target execution isolation, owned monitoring, validated network adapters and tested recovery. Cloud Run hosting alone does not establish production scale or readiness.
+The next delivery steps are an exploratory operator study and a read-only shadow pilot. Wider adoption requires durable storage and coordination, individual identity and authorization, per-target execution isolation, owned monitoring, validated network adapters and tested recovery. Cloud Run hosting alone does not establish production scale or readiness.
 
 ## Final Submission Handoff
 
-Follow the [judge guide](JUDGE_GUIDE.md). The project host coordinates approval access; no passcode should be published in source or the video. Before final upload, retain a supported Gemini repair and an unsupported-fault escalation, update the PDF if new evidence is added, then record the video and make the repository public as planned.
+Watch the [2:50 demo on YouTube](https://youtu.be/7edjKnZXiJA), then follow the [judge guide](JUDGE_GUIDE.md) to inspect the prototype. The video covers a recorded supported Gemini repair, including the failed alternative, exact-change approval and measured recovery; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately. Before submitting, make the repository public, verify the video and all submitted links while signed out, add the YouTube URL to the portal, and update the PDF if new evidence is added.
 
-The [submission checklist](SUBMISSION_CHECKLIST.md) tracks the final video, public repository, dashboard details and upload checks.
+Use the linked video, source repository and PDF deck in the registered competition dashboard, and confirm the exact team details and theme before submitting.

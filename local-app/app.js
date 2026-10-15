@@ -276,6 +276,7 @@ function renderProof(data) {
   }
   const verify = data.verify;
   if (!verify) return;
+  $('verify-help').textContent = verify.instructions || 'Read-only operator checks against the lab nodes.';
   const label = (id) => data.topology?.journeys.find((j) => j.id === id)?.label ?? id;
   const journeyIds = (focus.length ? focus : Object.keys(verify.journeys).slice(0, 1)).filter((id) => verify.journeys[id]);
   const devices = verify.devices.slice().sort((a, b) => Number(topics.includes(b.topic)) - Number(topics.includes(a.topic)));

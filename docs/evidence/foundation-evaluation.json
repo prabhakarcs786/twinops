@@ -1,0 +1,120 @@
+{
+  "suiteVersion": "foundation-evaluation-1",
+  "generatedAt": "2026-10-13T16:48:44.087054Z",
+  "planner": {
+    "kind": "runbook",
+    "provider": "none",
+    "model": "none",
+    "version": "runbook-planner-0.2.0"
+  },
+  "twin": "model",
+  "pack": "core+branch",
+  "variant": "matrix",
+  "seeds": 10,
+  "startSeed": 9001,
+  "byFault": {
+    "route_misconfig": {
+      "runs": 80,
+      "top1": 80,
+      "top3": 80,
+      "verdictOk": 80,
+      "fallbackFreeSuccess": 80,
+      "abstentions": 20,
+      "repairsVerified": 60,
+      "llmSelected": 0,
+      "avgExperiments": 4.5,
+      "unsafeRejected": 160,
+      "unsafePassed": 0,
+      "medianComputeMs": 5.95,
+      "p95ComputeMs": 7.7,
+      "fallbacks": 0,
+      "rejectedOutputs": 0,
+      "modelCalls": 0,
+      "tokens": 0
+    },
+    "dns_failure": {
+      "runs": 80,
+      "top1": 80,
+      "top3": 80,
+      "verdictOk": 80,
+      "fallbackFreeSuccess": 80,
+      "abstentions": 20,
+      "repairsVerified": 60,
+      "llmSelected": 0,
+      "avgExperiments": 4.25,
+      "unsafeRejected": 140,
+      "unsafePassed": 0,
+      "medianComputeMs": 5.4,
+      "p95ComputeMs": 7.4,
+      "fallbacks": 0,
+      "rejectedOutputs": 0,
+      "modelCalls": 0,
+      "tokens": 0
+    },
+    "cert_expiry": {
+      "runs": 80,
+      "top1": 80,
+      "top3": 80,
+      "verdictOk": 80,
+      "fallbackFreeSuccess": 80,
+      "abstentions": 0,
+      "repairsVerified": 80,
+      "llmSelected": 0,
+      "avgExperiments": 5.0,
+      "unsafeRejected": 160,
+      "unsafePassed": 0,
+      "medianComputeMs": 6.85,
+      "p95ComputeMs": 8.3,
+      "fallbacks": 0,
+      "rejectedOutputs": 0,
+      "modelCalls": 0,
+      "tokens": 0
+    },
+    "unsupported_link_flap": {
+      "runs": 80,
+      "top1": 80,
+      "top3": 80,
+      "verdictOk": 80,
+      "fallbackFreeSuccess": 80,
+      "abstentions": 80,
+      "repairsVerified": 0,
+      "llmSelected": 0,
+      "avgExperiments": 0.0,
+      "unsafeRejected": 0,
+      "unsafePassed": 0,
+      "medianComputeMs": 2.2,
+      "p95ComputeMs": 3.2,
+      "fallbacks": 0,
+      "rejectedOutputs": 0,
+      "modelCalls": 0,
+      "tokens": 0
+    }
+  },
+  "acceptance": {
+    "expectedVerdicts": true,
+    "noUnsafePasses": true,
+    "noDiagnosisWrites": true,
+    "boundedDiagnostics": true,
+    "controlsPass": true
+  },
+  "passed": true,
+  "note": "Synthetic model evidence on two graph structures; branch retains the same routing/DNS/TLS device capabilities. Reserve seeds and freeze prompts before use. This report does not measure real lab reliability or human productivity.",
+  "controls": {
+    "passed": 13,
+    "total": 13
+  },
+  "runs": 320,
+  "labDiagnosticSmoke": {
+    "date": "2026-10-13",
+    "adapter": "Containerlab FRR/CoreDNS/nginx",
+    "diagnostics": [
+      "direct_ip",
+      "dns_lookup",
+      "route_lookup",
+      "tls_probe"
+    ],
+    "available": 4,
+    "configurationWrites": 0,
+    "scope": "Read-only smoke on the existing healthy local lab; not a fault or soak evaluation."
+  }
+}

@@ -6,6 +6,8 @@ Google Cloud AI Builder Cup 2026 · **Future of Work & Enterprise Productivity**
 
 TwinOps helps network engineers and change approvers turn scattered incident evidence into a tested repair and a reviewable Proof Pack. The hosted prototype combines Gemini through Vertex AI, an isolated protocol lab, deterministic verification and human approval.
 
+**[Watch the 2:50 demo on YouTube](https://youtu.be/7edjKnZXiJA)** — follow a recorded Metro routing fault through Gemini investigation, isolated twin tests, approval and measured recovery.
+
 ## Live prototype
 
 | Open | Purpose |
@@ -15,21 +17,22 @@ TwinOps helps network engineers and change approvers turn scattered incident evi
 | [Product overview](https://twinops-live-705406130795.europe-west1.run.app/) | Problem, workflow and deterministic browser demonstration |
 | [Interactive pitch deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | Ten-slide presentation |
 | [PDF pitch deck](docs/TwinOps_Deck.pdf) | Submission attachment |
+| [Demo video on YouTube](https://youtu.be/7edjKnZXiJA) | 2:50 showcase of the recorded repair workflow |
 
 Deployment and lab readiness were checked on **15 October 2026**: both apps loaded, Metro's four customer journeys were healthy, and the isolated lab reported ready. The hosted service reported **Vertex AI / Gemini 2.5 Flash** as its configured planner. Configuration and readiness do not establish a completed Gemini repair; model-call, fallback, approval and recovery evidence must be inspected in a saved investigation.
 
+The [recorded repair evidence](docs/evidence/recorded-demo.json) retains the subsequent hosted demonstration: ten actual Gemini calls, one schema fallback, a selected model-proposed repair, owner-authorized approval and eleven passing checks in each of three recovery windows.
+
 The demo runs one shared lab. Coordinate a session with the project host before injecting a fault; approval and rejection require the host's operator passcode. Keep that credential out of the repository. History is local to the Cloud Run instance and can disappear when the instance is replaced.
 
-## Submission materials
+## Documentation
 
-- [Submission article](docs/SUBMISSION.md): what was built, demo, Google Cloud and Gemini integration, architecture, build process, lessons, evidence and limits.
-- [Judge walkthrough](docs/JUDGE_GUIDE.md): inspect the application, follow an investigation and review evidence.
-- [Build log](docs/BUILD_LOG.md): implementation milestones, problems addressed and verification scope.
-- [Demo media](docs/DEMO_MEDIA.md): included screenshots, architecture image and the deferred video handoff.
-- [Final submission checklist](docs/SUBMISSION_CHECKLIST.md): artifact requirements and remaining verification.
-- [Technical & Functional Guide](docs/TwinOps_Technical_and_Functional_Guide.md): engineering details and production roadmap.
+- [Documentation index](docs/README.md): the current guides, deck and evidence records.
+- [Technical guide](docs/TECHNICAL_GUIDE.md): architecture, investigation flow, approval, configuration and limits.
+- [Demo walkthrough](docs/JUDGE_GUIDE.md): inspect the application and follow a controlled repair.
+- [Submission overview](docs/SUBMISSION.md): problem, Google AI integration, build process, evidence and intended impact.
 
-**Final owner steps:** record and link a public video under three minutes, then make the repository public and verify anonymous access. Those steps are intentionally pending. Confirm the theme and team details against the registered competition entry before submitting.
+**Final owner steps:** make the repository public, verify the prototype, video and submission links while signed out, and add the YouTube URL to the competition portal. The video is uploaded and linked in these materials. Confirm the theme and team details against the registered competition entry before submitting.
 
 ### Preview
 
@@ -74,9 +77,9 @@ Writes to the demo network go through an apply gateway after a human approves a 
 | `backend/` | FastAPI service: incident orchestration, planners (Gemini / runbook), twin backends, Proof Gate, approval-bound apply, SSE streaming, Proof Pack export, evaluation harness. |
 | `lab/` | Containerlab emulated network: FRR (BGP, IPv4 + IPv6), CoreDNS (cold + warm-cache resolvers), nginx TLS gateway, service + admin console. Two isolated instances: `prod` (demo network) and `twin`. |
 | `deploy/` | Cloud Run deployment scripts (model twin, and the connected demo with the real lab) and the lab VM script. |
-| `docs/` | Proposal, roadmap, deck PDF (`TwinOps_Deck.pdf`). |
+| `docs/` | Current guides, submission overview, PDF deck and retained evidence. |
 
-For how it works internally, what is real versus simulated, and the path to production, see the [Technical & Functional Guide](docs/TwinOps_Technical_and_Functional_Guide.md).
+For the architecture, real versus synthetic evidence, and the path to production, see the [technical guide](docs/TECHNICAL_GUIDE.md).
 
 ## Quick start
 
@@ -290,7 +293,7 @@ TWINOPS_ENV_FILE=/dev/null PYTHONPATH=backend .venv/bin/python -m twinops.evalua
 
 This 320-case suite is synthetic model validation. A fresh held-out planner evaluation must reserve new seeds and freeze prompts; these implementation-validation seeds have now been exercised. Run with `--planner llm --compare` for provider-specific evidence after configuring a provider. Real operator productivity and sustained device reliability require separate trials.
 
-The [recorded validation summary](docs/validation/foundation-evaluation.json) contains 200 verified repairs, 120 safe abstentions, zero unsafe passes and zero diagnosis writes. It also records the scope of the four real-lab read-only diagnostic smoke checks. These results do not establish human review-time savings.
+The [recorded validation summary](docs/evidence/foundation-evaluation.json) contains 200 verified repairs, 120 safe abstentions, zero unsafe passes and zero diagnosis writes. It also records the scope of the four real-lab read-only diagnostic smoke checks. These results do not establish human review-time savings.
 
 ## Emulated lab (Containerlab)
 
