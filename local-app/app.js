@@ -473,10 +473,10 @@ async function action(path, body = {}) {
   } catch (e) { $('action-status').textContent = e.message; }
   finally { pending = false; if (latest) render(latest); }
 }
-document.querySelectorAll('[data-fault]').forEach((b) => b.addEventListener('click', () => action('/api/faults', {fault:b.dataset.fault})));
+document.querySelectorAll('[data-fault]').forEach((b) => b.addEventListener('click', () => action('api/faults', {fault:b.dataset.fault})));
 $('reset').addEventListener('click', () => {
-  if (!latest?.recoveryRequired) return action('/api/reset');
-  if (confirm('Operator recovery re-pushes the healthy baseline to every lab device and verifies it with live probes. The current scenario moves to Recent issues. Continue?')) action('/api/reset', {operatorRecovery: true});
+  if (!latest?.recoveryRequired) return action('api/reset');
+  if (confirm('Operator recovery re-pushes the healthy baseline to every lab device and verifies it with live probes. The current scenario moves to Recent issues. Continue?')) action('api/reset', {operatorRecovery: true});
 });
 $('verify').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-copy]');
@@ -495,7 +495,7 @@ let renderSeq = 0;
 async function poll() {
   const seq = renderSeq;
   try {
-    const response = await fetch('/api/dashboard');
+    const response = await fetch('api/dashboard');
     if (!response.ok) throw new Error('Dashboard unavailable');
     const data = await response.json();
     if (seq === renderSeq) render(data);

@@ -181,9 +181,8 @@ class Registry:
         return live
 
     async def create_external(self, client: Any, issue: dict, topo: dict, incident_id: str) -> LiveIncident:
-        from .lab.backend import EmulatedTwin, runtime_dir
+        from .lab.backend import EmulatedTwin, make_runner, runtime_dir
         from .lab.device import LabInstance
-        from .lab.runner import DockerRunner
         from .network_connector import RemoteNetwork
 
         if self.store.needs_recovery():
@@ -193,7 +192,7 @@ class Registry:
             planner = build_planner(settings=self.settings)
             await client.call(f"/api/issues/{issue['id']}/claim", {"incidentId": incident_id})
             demo = RemoteNetwork(client, issue['id'], incident_id)
-            twin = EmulatedTwin(LabInstance('twin', runtime_dir(self.settings), topo, DockerRunner()))
+            twin = EmulatedTwin(LabInstance('twin', runtime_dir(self.settings), topo, make_runner(self.settings)))
             session = IncidentSession(incident_id, 'external', demo, twin, planner, pace=0, external=True, apply_enabled=bool(self.settings.apply_enabled), apply_policy=self.settings.allows_apply,
                                       postcheck_samples=self.settings.postcheck_samples, postcheck_interval_s=self.settings.postcheck_interval_s)
             session.recall = lambda observation: recall_candidates(self.store.recent(), observation, topo, twin.backend, twin.supported_actions)

@@ -1,5 +1,5 @@
 # TwinOps: one container serving the API (FastAPI + SSE) and the built frontend.
-# Cloud Run runs the model twin; the Containerlab twin needs privileged Docker and runs on a lab host (see README).
+# Cloud Run with the model twin. The connected demo with the real lab networks uses deploy/cloudrun-lab.Dockerfile.
 
 # ---------- frontend ----------
 FROM node:23-alpine AS web

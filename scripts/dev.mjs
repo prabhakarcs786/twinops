@@ -31,7 +31,17 @@ const API_PORT = Number(setting('PORT', 8000));
 const WEB_PORT = Number(setting('TWINOPS_WEB_PORT', 5173));
 const NETWORK_PORT = Number(setting('TWINOPS_NETWORK_PORT', 8010));
 const CONNECTED = process.argv.includes('--connected');
+// --hosted (lab VM): the API serves the built UI behind a public HTTPS proxy; no Vite dev server.
+const HOSTED = process.argv.includes('--hosted');
+const PUBLIC_URL = setting('TWINOPS_PUBLIC_URL', '');
+const NETWORK_PUBLIC_URL = setting('TWINOPS_NETWORK_PUBLIC_URL', '');
+const UI_URL = HOSTED ? PUBLIC_URL : `http://localhost:${WEB_PORT}`;
+const DIST = join(ROOT, 'frontend', 'dist');
 const API_URL = `http://127.0.0.1:${API_PORT}`;
+if (HOSTED && !(CONNECTED && PUBLIC_URL && NETWORK_PUBLIC_URL && setting('TWINOPS_OPERATOR_TOKEN'))) {
+  console.error('✖ --hosted needs --connected plus TWINOPS_PUBLIC_URL, TWINOPS_NETWORK_PUBLIC_URL and TWINOPS_OPERATOR_TOKEN (approval passcode).');
+  process.exit(1);
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const run = (cmd, args) => spawnSync(cmd, args, { encoding: 'utf8' }).stdout ?? '';
@@ -114,6 +124,10 @@ if (!existsSync(join(ROOT, 'frontend', 'node_modules'))) {
   console.log('• installing frontend dependencies (first run)…');
   if (spawnSync(npm, ['--prefix', 'frontend', 'ci'], { cwd: ROOT, stdio: 'inherit', shell: WIN }).status !== 0) process.exit(1);
 }
+if (HOSTED && !existsSync(join(DIST, 'index.html'))) {
+  console.log('• building the frontend (first run)…');
+  if (spawnSync(npm, ['--prefix', 'frontend', 'run', 'build'], { cwd: ROOT, stdio: 'inherit', shell: WIN }).status !== 0) process.exit(1);
+}
 
 const children = [];
 let stopping = false;
@@ -172,6 +186,7 @@ const connectionEnv = CONNECTED ? {
   // Approved changes go through Metro's apply gateway; set TWINOPS_APPLY_ENABLED=false to keep evidence read-only.
   TWINOPS_APPLY_ENABLED: setting('TWINOPS_APPLY_ENABLED', 'true'),
   TWINOPS_DATA_DIR: join(ROOT, 'backend', '.data', 'connected'),
+  ...(HOSTED ? { TWINOPS_NETWORK_PUBLIC_URL: NETWORK_PUBLIC_URL } : {}),
 } : {};
 
 if (CONNECTED) {
@@ -197,7 +212,7 @@ if (CONNECTED) {
       if (result !== 0) { console.error('✖ Lab setup failed. Check that Docker Desktop is running.'); await shutdown(1); }
     }
   }
-  start('net', '32', python, ['-m', 'twinops.network_app'], { ...sharedEnv, ...connectionEnv, TWINOPS_NETWORK_PORT: String(NETWORK_PORT), TWINOPS_UI_URL: `http://localhost:${WEB_PORT}` });
+  start('net', '32', python, ['-m', 'twinops.network_app'], { ...sharedEnv, ...connectionEnv, TWINOPS_NETWORK_PORT: String(NETWORK_PORT), TWINOPS_UI_URL: UI_URL });
 }
 
 start('api', '36', python, ['-m', 'twinops'], {
@@ -207,14 +222,15 @@ start('api', '36', python, ['-m', 'twinops'], {
   TWINOPS_RELOAD: CONNECTED ? '0' : '1',
   HOST: '127.0.0.1',
   PORT: String(API_PORT),
+  ...(HOSTED ? { TWINOPS_STATIC_DIR: DIST, TWINOPS_CORS_ORIGINS: PUBLIC_URL, TWINOPS_SECURE_COOKIES: 'true' } : {}),
 });
-start('web', '35', npm, ['--prefix', 'frontend', 'run', 'dev', '--', '--port', String(WEB_PORT), '--strictPort'], { TWINOPS_API_URL: API_URL });
+if (!HOSTED) start('web', '35', npm, ['--prefix', 'frontend', 'run', 'dev', '--', '--port', String(WEB_PORT), '--strictPort'], { TWINOPS_API_URL: API_URL });
 
 for (let i = 0; i < 60 && !stopping; i++) {
   try {
     if ((await fetch(`${API_URL}/api/health`)).ok) {
-      console.log(`\n\x1b[32m✔ TwinOps dev is up\x1b[0m  UI http://localhost:${WEB_PORT}   API ${API_URL}   (Ctrl+C stops both, npm run dev again restarts)\n`);
-      if (CONNECTED) console.log(`  Network dashboard http://localhost:${NETWORK_PORT}\n  Connected applications http://localhost:${WEB_PORT}/connections\n  Lab probes warm up in the background. Ctrl+C stops the apps; lab containers and evidence are retained.\n`);
+      console.log(`\n\x1b[32m✔ TwinOps ${HOSTED ? 'is live' : 'dev is up'}\x1b[0m  UI ${UI_URL}   API ${API_URL}   (Ctrl+C stops both, npm run dev again restarts)\n`);
+      if (CONNECTED) console.log(`  Network dashboard ${HOSTED ? NETWORK_PUBLIC_URL : `http://localhost:${NETWORK_PORT}`}\n  Connected applications ${UI_URL}/connections\n  Lab probes warm up in the background. Ctrl+C stops the apps; lab containers and evidence are retained.\n`);
       break;
     }
   } catch {

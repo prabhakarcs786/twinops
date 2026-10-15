@@ -108,6 +108,35 @@ def test_runner_only_executes_allow_listed_binaries():
         asyncio.run(runner.control("restart", "clab-twinops-twin-dns1"))
 
 
+def test_namespace_runner_enters_only_known_running_nodes(tmp_path, monkeypatch):
+    import os
+
+    from twinops.lab import netns
+
+    runner = netns.NamespaceRunner(tmp_path)
+    seen: list[list[str]] = []
+
+    async def fake_run(argv, timeout):
+        seen.append(argv)
+        return Result(0, "ok", "")
+
+    monkeypatch.setattr(runner, "_run", fake_run)
+    monkeypatch.setattr(netns, "_members", lambda holder: [])
+    netns.registry_path(tmp_path).write_text(json.dumps({"clab-twinops-twin-b17": os.getpid()}))
+    with pytest.raises(LabError):
+        asyncio.run(runner.exec("clab-twinops-twin-b17", ["sh", "-c", "id"]))
+    assert asyncio.run(runner.exec("clab-twinops-twin-b17", ["vtysh", "-c", "show bgp summary"])).out == "ok"
+    assert seen == [["nsenter", "-t", str(os.getpid()), "-n", "-m", "-p", "--", "vtysh", "-c", "show bgp summary"]]
+    assert asyncio.run(runner.exec("clab-twinops-twin-p0", ["ip", "link"])).rc == 1
+    asyncio.run(runner.control("pause", "clab-twinops-twin-b17"))
+    assert asyncio.run(runner.inspect_states("clab-twinops-")) == {"clab-twinops-twin-b17": "paused"}
+    assert "paused" in asyncio.run(runner.exec("clab-twinops-twin-b17", ["ip", "link"])).err
+    asyncio.run(runner.control("unpause", "clab-twinops-twin-b17"))
+    assert asyncio.run(runner.inspect_states("clab-twinops-")) == {"clab-twinops-twin-b17": "running"}
+    with pytest.raises(LabError):
+        asyncio.run(runner.control("restart", "clab-twinops-twin-b17"))
+
+
 # ---------- push / capture ----------
 
 RUNNING_CONFIG = """frr version 9.1

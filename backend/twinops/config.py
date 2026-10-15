@@ -57,7 +57,15 @@ class Settings:
     twin: str = field(default_factory=lambda: os.environ.get("TWINOPS_TWIN", "model"))
     network_url: str | None = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_URL") or None)
     network_token: str = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_TOKEN", ""))
+    # Browser-facing Metro address behind a public HTTPS proxy; the connector itself stays on network_url.
+    network_public_url: str | None = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_PUBLIC_URL") or None)
+    # Serve Metro's public pages under this path of the TwinOps site (one public URL, e.g. "/metro" on Cloud Run).
+    network_proxy_prefix: str = field(default_factory=lambda: os.environ.get("TWINOPS_NETWORK_PROXY_PREFIX", "").rstrip("/"))
     lab_dir: Path = field(default_factory=lambda: Path(os.environ.get("TWINOPS_LAB_DIR", Path(__file__).resolve().parents[2] / "lab")))
+    # "containerlab" (Docker) or "netns" (Linux namespaces in one container, for Cloud Run).
+    lab_runtime: str = field(default_factory=lambda: os.environ.get("TWINOPS_LAB_RUNTIME", "containerlab"))
+    # Parallel lab commands. Bursts above a CPU quota (Cloud Run) stall every process and inflate measured latency.
+    lab_concurrency: int = field(default_factory=lambda: int(os.environ.get("TWINOPS_LAB_CONCURRENCY", "6")))
     harness_enabled: bool = field(default_factory=lambda: _bool("TWINOPS_HARNESS", True))
     data_dir: Path = field(default_factory=lambda: Path(os.environ.get("TWINOPS_DATA_DIR", Path(__file__).resolve().parents[1] / ".data")))
     static_dir: Path | None = field(default_factory=lambda: Path(p) if (p := os.environ.get("TWINOPS_STATIC_DIR")) else None)

@@ -123,6 +123,47 @@ def test_network_auth_origin_and_detection(tmp_path):
     asyncio.run(run())
 
 
+def test_public_address_is_linked_and_only_that_host_is_accepted(tmp_path):
+    from twinops.api import create_app
+
+    async def run():
+        settings = Settings(planner='runbook', twin='model', network_url='http://127.0.0.1:8010', network_token='test-connector',
+                            network_public_url='https://metro.example.test', data_dir=tmp_path / 'evidence')
+        network = create_network_app(settings, NetworkState(settings, tmp_path / 'network.json', DeviceDouble()))
+        def client(app, url):
+            return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=url)
+        async with client(network, 'https://metro.example.test') as public, client(network, 'https://other.example.test') as other, \
+                client(create_app(settings), 'http://testserver') as api:
+            assert (await public.get('/api/health')).status_code == 200
+            assert (await other.get('/api/health')).status_code == 400
+            assert (await public.post('/api/faults', json={'fault': 'dns_failure'}, headers={'Origin': 'https://attacker.example'})).status_code == 403
+            assert (await api.get('/api/config')).json()['networkUrl'] == 'https://metro.example.test'
+    asyncio.run(run())
+
+
+def test_metro_pages_are_served_under_a_prefix_without_connector_endpoints(tmp_path, monkeypatch):
+    from twinops import api as api_module
+
+    settings = Settings(planner='runbook', twin='model', network_url='http://127.0.0.1:8010', network_token='test-connector',
+                        network_public_url='https://demo.example.test/metro/', network_proxy_prefix='/metro', data_dir=tmp_path / 'evidence')
+    network = create_network_app(settings, NetworkState(settings, tmp_path / 'network.json', DeviceDouble()))
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(api_module.httpx, 'AsyncClient', lambda **kw: real_client(transport=httpx.ASGITransport(app=network), base_url=kw['base_url']))
+    app = api_module.create_app(settings)
+
+    async def run():
+        async with real_client(transport=httpx.ASGITransport(app=app), base_url='https://demo.example.test') as site:
+            assert (await site.get('/metro')).headers['location'] == '/metro/'
+            page = await site.get('/metro/')
+            assert page.status_code == 200 and 'app.js' in page.text
+            assert (await site.get('/metro/api/health')).json()['status'] == 'ok'
+            for hidden in ('/metro/api/connector', '/metro/api/snapshot', '/metro/api/docs'):
+                assert (await site.get(hidden, headers={'Authorization': 'Bearer test-connector'})).status_code == 404
+            refused = await site.post('/metro/api/faults', json={'fault': 'dns_failure'}, headers={'Origin': 'https://attacker.example'})
+            assert refused.status_code == 403
+    asyncio.run(run())
+
+
 async def prepare_apply(state, client):
     await state.refresh()
     await client.post('/api/faults', json={'fault': 'dns_failure'})
@@ -374,6 +415,9 @@ def test_lab_status_detects_links_lost_after_a_docker_restart(monkeypatch):
     from twinops.lab import backend
 
     class Runner:
+        def __init__(self, concurrency=6):
+            pass
+
         async def inspect_states(self, prefix):
             return {f'clab-twinops-{i}-{n}': 'running' for i in ('prod', 'twin') for n in ('b17', 'gw1', 'svc1', 'dns1', 'dns2', 'p0', 'p1', 'p2', 'p3')}
 

@@ -36,6 +36,8 @@ def clab(args: list[str], workdir: Path) -> int:
 
 
 def build(settings: Settings) -> int:
+    if settings.lab_runtime == "netns":
+        return 0  # daemons are part of the TwinOps image
     images = settings.lab_dir / "images"
     for key, folder in (("frr", "frr-node"), ("dns", "dns"), ("web", "web")):
         if _run(["docker", "build", "-t", IMAGES[key], str(images / folder)]) != 0:
@@ -46,6 +48,11 @@ def build(settings: Settings) -> int:
 def up(settings: Settings) -> int:
     runtime = runtime_dir(settings)
     write_runtime(runtime, lab_healthy(build_topology("core")))
+    if settings.lab_runtime == "netns":
+        from .netns import deploy
+
+        deploy(runtime)
+        return 0
     for instance in INSTANCES:
         if clab(["deploy", "-t", f"twinops-{instance}.clab.yml", "--reconfigure"], runtime) != 0:
             return 1
@@ -54,6 +61,11 @@ def up(settings: Settings) -> int:
 
 def down(settings: Settings) -> int:
     runtime = runtime_dir(settings)
+    if settings.lab_runtime == "netns":
+        from .netns import destroy
+
+        destroy(runtime)
+        return 0
     code = 0
     for instance in INSTANCES:
         code |= clab(["destroy", "-t", f"twinops-{instance}.clab.yml", "--cleanup"], runtime)

@@ -54,4 +54,6 @@ test('unconfigured connection explains how to start the two-app demo', async ({ 
   await page.goto('/connections');
   await expect(page.getByText('Not configured', { exact: true })).toBeVisible();
   await expect(page.getByText('npm run dev:connected', { exact: true })).toBeVisible();
+  await expect(page.getByText('Not connected in this deployment')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No connected application' })).toBeVisible();
 });

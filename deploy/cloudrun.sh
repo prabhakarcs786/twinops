@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploys TwinOps (API + SSE + frontend) to Cloud Run with the model twin.
-# Containerlab needs privileged Docker, which Cloud Run does not offer; run the emulated twin on a lab host instead.
+# For the connected demo with the real lab networks on Cloud Run, use deploy/cloudrun-lab.sh.
 #
 # Prerequisites (run once, yourself):
 #   gcloud auth login && gcloud config set project <PROJECT_ID>

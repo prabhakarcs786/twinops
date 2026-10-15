@@ -27,6 +27,7 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
   const { connection, error } = useConnection();
   const live = !error && connection?.connected && connection.ready;
   const loading = !connection && !error;
+  const notConfigured = connection?.configured === false;
   const journeys = live ? connection.journeys ?? [] : [];
   const operational = journeys.filter((j) => j.ok).length;
   const journeyLabel = (id: string) => connection?.journeys?.find((j) => j.id === id)?.label ?? id;
@@ -38,11 +39,11 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
       {error && <p role="alert" className="connection-alert">{error}</p>}
       <section className="connection-card" aria-label="Metro Network connection">
         <div className="connection-app-icon" aria-hidden="true"><Server size={30} /></div>
-        <div className="connection-app-info"><p className="eyebrow">LOCAL NETWORK OPERATIONS</p><h2>Metro Network</h2><p>{connection?.detail || 'Connecting to the local application…'}</p>
+        <div className="connection-app-info"><p className="eyebrow">NETWORK OPERATIONS</p><h2>Metro Network</h2><p>{connection?.detail || (notConfigured ? 'Not connected in this deployment' : 'Connecting to the network application…')}</p>
           {connection?.checkedAt && <small>Last service measurement: {new Date(connection.checkedAt * 1000).toLocaleTimeString()}</small>}
         </div>
         <div className="connection-card-actions">
-          <StatusChip tone={loading ? 'pending' : live ? 'ok' : connection?.configured === false ? 'skip' : 'warn'}>{loading ? 'Connecting…' : live ? 'Monitoring' : connection?.configured === false ? 'Not configured' : 'Unavailable'}</StatusChip>
+          <StatusChip tone={loading ? 'pending' : live ? 'ok' : notConfigured ? 'skip' : 'warn'}>{loading ? 'Connecting…' : live ? 'Monitoring' : notConfigured ? 'Not configured' : 'Unavailable'}</StatusChip>
           <Link className="btn btn-primary btn-sm" to="/workbench">Open workbench <ArrowUpRight size={15} aria-hidden="true" /></Link>
           {connection?.url && <a className="btn btn-ghost btn-sm" href={connection.url} target="_blank" rel="noreferrer">Open application <ArrowUpRight size={15} aria-hidden="true" /></a>}
         </div>
@@ -51,11 +52,11 @@ export function Connections({ theme, onToggleTheme }: { theme: 'dark' | 'light';
           {journeys.map((j) => <li key={j.id}><StatusChip tone={j.ok ? 'ok' : 'fail'}>{j.id}</StatusChip>{j.label}</li>)}
         </ul>}
       </section>
-      {connection?.configured === false && <p className="connection-alert">Start the connected demo with <code>npm run dev:connected</code> to run both applications and the real network lab.</p>}
+      {notConfigured && <p className="connection-alert">This deployment runs the simulated network model only. Metro Network and its Containerlab twin need Docker, so they run where you start <code>npm run dev:connected</code>: your machine or the lab VM.</p>}
       {connection?.recoveryRequired && <p role="alert" className="connection-alert">The network requires operator recovery. Further changes are blocked.</p>}
       <div className="connections-explainer"><span><Radio size={17} aria-hidden="true" /> Automatic issue detection</span><span><Server size={17} aria-hidden="true" /> Isolated Containerlab twin</span><span><ShieldCheck size={17} aria-hidden="true" /> Approval before live changes</span></div>
       <section className="connected-issues"><div className="connected-section-heading"><h2>Detected incidents</h2><span>{connection?.issues.length ?? 0} recorded</span></div>
-        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : 'Waiting for the network application'}</h3><p>Open the workbench to see the network and inject a lab fault. TwinOps detects new issues automatically.</p></div> :
+        {!connection?.issues.length ? <div className="connections-empty"><Radio size={32} aria-hidden="true" /><h3>{live ? 'Watching for new service issues' : loading ? 'Checking for service issues…' : notConfigured ? 'No connected application' : 'Waiting for the network application'}</h3><p>{notConfigured ? 'Open the workbench to investigate an incident on the simulated network model.' : 'Open the workbench to see the network and inject a lab fault. TwinOps detects new issues automatically.'}</p></div> :
           connection.issues.map((issue, index) => {
             const state = issueState(issue, index === 0, connection.operation);
             const active = !['resolved', 'reset'].includes(issue.status);

@@ -16,7 +16,7 @@ Writes to the demo network go through an apply gateway after a human approves a 
 | `frontend/` | Product site (`/`), live workbench (`/workbench`), pitch deck (`/deck`). React 19 + Vite. Also contains a deterministic in-browser engine used when no backend is reachable. |
 | `backend/` | FastAPI service: incident orchestration, planners (Gemini / runbook), twin backends, Proof Gate, approval-bound apply, SSE streaming, Proof Pack export, evaluation harness. |
 | `lab/` | Containerlab emulated network: FRR (BGP, IPv4 + IPv6), CoreDNS (cold + warm-cache resolvers), nginx TLS gateway, service + admin console. Two isolated instances: `prod` (demo network) and `twin`. |
-| `deploy/` | Cloud Run deployment script. |
+| `deploy/` | Cloud Run deployment scripts (model twin, and the connected demo with the real lab) and the lab VM script. |
 | `docs/` | Proposal, roadmap, deck PDF (`TwinOps_Deck.pdf`). |
 
 For how it works internally, what is real versus simulated, and the path to production, see the [Technical & Functional Guide](docs/TwinOps_Technical_and_Functional_Guide.md).
@@ -313,13 +313,15 @@ Hardening:
 
 ## Deploy to Cloud Run
 
-The root `Dockerfile` builds the UI and serves it with the API as a non-root user. It bakes in a runbook evaluation report. Cloud Run cannot run privileged Containerlab, so the service uses the model twin; keep the emulated lab on a lab host.
+The root `Dockerfile` builds the UI and serves it with the API as a non-root user. It bakes in a runbook evaluation report. This service uses the model twin.
 
 ```sh
 docker build -t twinops:local . && docker run -p 8080:8080 twinops:local   # local check
 deploy/cloudrun.sh            # Gemini API key from Secret Manager (see script header for one-time setup)
 deploy/cloudrun.sh --vertex   # Vertex AI via the service account, no key
 ```
+
+**Connected demo on Cloud Run.** `deploy/cloudrun-lab.sh` deploys TwinOps, Metro Network and both real lab networks (FRR, CoreDNS, nginx) in one container from [deploy/cloudrun-lab.Dockerfile](deploy/cloudrun-lab.Dockerfile). Cloud Run has no privileged Docker, so each lab node is a set of Linux namespaces owned by a user namespace (`TWINOPS_LAB_RUNTIME=netns`, see [backend/twinops/lab/netns.py](backend/twinops/lab/netns.py)) instead of a Containerlab container; configs, links, faults and fixes are the same. TwinOps is served at `/` and Metro at `/metro/`. The service scales to zero and needs the second-generation execution environment; each new instance starts a fresh healthy lab, so history does not survive scale-down. It defaults to 2 vCPU and 1 GiB with lab parallelism equal to the vCPU count: above Cloud Run's CPU quota, bursts of probe processes stall and the surge challenge measures that stall instead of the network.
 
 Active tasks and device handles remain in memory; evidence is stored in SQLite. The image gives its non-root user write access to `/app/data`. Cloud Run's default container filesystem is ephemeral: this local storage does **not** preserve history across instance replacement. The deployment script uses one instance with session affinity for the demo. Reliable cloud history and scaling require an external durable store and shared coordination; they are not supplied by this implementation.
 

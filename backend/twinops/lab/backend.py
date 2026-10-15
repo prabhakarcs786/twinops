@@ -40,6 +40,14 @@ def runtime_dir(settings: Settings) -> Path:
     return settings.lab_dir / "runtime"
 
 
+def make_runner(settings: Settings) -> DockerRunner:
+    if settings.lab_runtime == "netns":
+        from .netns import NamespaceRunner
+
+        return NamespaceRunner(runtime_dir(settings), settings.lab_concurrency)
+    return DockerRunner(concurrency=settings.lab_concurrency)
+
+
 class LabDemoNetwork:
     """The demo network running as real containers. Agents only receive observe() output."""
 
@@ -267,7 +275,7 @@ class EmulatedTwin:
 async def lab_status(settings: Settings, instances: tuple[str, ...] = INSTANCES) -> dict[str, Any]:
     from .render import topology
 
-    runner = DockerRunner()
+    runner = make_runner(settings)
     expected = {container(i, n) for i in instances for n in ("b17", "gw1", "svc1", "dns1", "dns2", *(p.container for p in POPS))}
     try:
         states = await runner.inspect_states("clab-twinops-")
@@ -294,6 +302,8 @@ async def lab_status(settings: Settings, instances: tuple[str, ...] = INSTANCES)
     if lost:
         return {"backend": "emulated", "ready": False, "linksLost": lost,
                 "detail": f"lab network links lost in {', '.join(lost)} (Docker restarted the containers). Run `python -m twinops.lab up` or restart `npm run dev:connected` to re-deploy"}
+    if settings.lab_runtime == "netns":
+        return {"backend": "emulated", "ready": True, "detail": "Linux network namespaces: 2 isolated instances × 9 nodes (FRR, CoreDNS, nginx)"}
     return {"backend": "emulated", "ready": True, "detail": "Containerlab: 2 isolated instances × 9 containers (FRR, CoreDNS, nginx)"}
 
 
@@ -302,7 +312,7 @@ async def lab_backends(settings: Settings, topo: Topology, seed: int) -> tuple[L
     if not status["ready"]:
         raise LabError(f"{status['detail']} — run `python -m twinops.lab up`")
     runtime = runtime_dir(settings)
-    runner = DockerRunner()
+    runner = make_runner(settings)
     demo = LabDemoNetwork(LabInstance("prod", runtime, topo, runner), topo, seed)
     await demo.prepare()
     return demo, EmulatedTwin(LabInstance("twin", runtime, topo, runner))

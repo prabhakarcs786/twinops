@@ -7,14 +7,14 @@ import contextlib
 import hmac
 import json
 import time
-import httpx
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -194,7 +194,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "role": access.role(request) if settings.require_auth else None,
             "harness": settings.harness_enabled and not settings.network_url,
             "connectedApplication": bool(settings.network_url),
-            "networkUrl": settings.network_url or None,
+            "networkUrl": settings.network_public_url or settings.network_url or None,
             "activeRuns": registry.active(),
             "contractVersion": "incident-1", "applyEnabled": settings.allows_apply(),
             "variants": [{"id": variant, "label": label} for variant, label in VARIANTS.items()]
@@ -372,6 +372,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "pack": data.get("pack", "core"), "startSeed": data.get("startSeed", 1), "suiteVersion": data.get("suiteVersion", "legacy"),
                             "note": data.get("note", ""), "durationS": data.get("durationS"), "variant": data.get("variant", "standard")})
         return out
+
+    prefix = settings.network_proxy_prefix
+    if prefix and settings.network_url:
+        # Metro's pages and exercise controls only; connector endpoints stay reachable from this host alone.
+        metro_public = {"", "app.js", "style.css", "favicon.svg", "favicon.ico", "metrics", "api/health", "api/dashboard", "api/faults", "api/reset"}
+        metro = httpx.AsyncClient(base_url=settings.network_url, timeout=120, trust_env=False)
+
+        @app.get(prefix, include_in_schema=False)
+        async def metro_root() -> RedirectResponse:
+            return RedirectResponse(f"{prefix}/")
+
+        @app.api_route(f"{prefix}/{{path:path}}", methods=["GET", "POST"], include_in_schema=False)
+        async def metro_page(path: str, request: Request) -> Response:
+            if path not in metro_public:
+                raise HTTPException(404)
+            if request.method == "POST":
+                limiter.check(request.client.host if request.client else "unknown")
+            # Metro checks Host and Origin itself, so both are passed through unchanged.
+            headers = {k: v for k, v in request.headers.items() if k in ("host", "origin", "content-type", "accept")}
+            try:
+                upstream = await metro.request(request.method, f"/{path}", content=await request.body(), headers=headers)
+            except httpx.RequestError as exc:
+                raise HTTPException(503, "Metro Network is starting; try again in a moment") from exc
+            passed = {k: v for k, v in upstream.headers.items() if k not in ("content-length", "content-encoding", "transfer-encoding", "connection")}
+            return Response(upstream.content, upstream.status_code, passed)
 
     static_dir = settings.static_dir
     if static_dir and static_dir.is_dir():

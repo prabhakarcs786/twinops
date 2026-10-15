@@ -24,10 +24,10 @@ from .catalogue import CATALOGUE, describe_step, forbidden_reasons, validate_cha
 from .config import REPO_ROOT, Settings, load_env_file
 from .harness import FAULT_INFO
 from .hashing import hash_of
-from .lab.backend import LabDemoNetwork, lab_status, runtime_dir, stable_hash
+from .lab.backend import LabDemoNetwork, lab_status, make_runner, runtime_dir, stable_hash
 from .lab.device import LabInstance
 from .lab.plan import DNS, DNS_COLD_PORT, POPS, container
-from .lab.runner import DockerRunner, LabError
+from .lab.runner import LabError
 from .model import parse_iso
 from .topology import SERVICE_IPS, build_topology, pop_by_index
 
@@ -144,7 +144,7 @@ class NetworkState:
         self.settings = settings
         self.path = path
         self.topo = build_topology('core')
-        self.network = network or LabDemoNetwork(LabInstance('prod', runtime_dir(settings), self.topo, DockerRunner()), self.topo, 7)
+        self.network = network or LabDemoNetwork(LabInstance('prod', runtime_dir(settings), self.topo, make_runner(settings)), self.topo, 7)
         self.lock = asyncio.Lock()
         self.ready = False
         self.error: str | None = None
@@ -379,7 +379,8 @@ def create_network_app(settings: Settings | None = None, state: NetworkState | N
 
     app = FastAPI(title='Metro Network API', lifespan=lifespan, docs_url='/api/docs')
     app.state.network = state
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', 'testserver'])
+    public_host = urlsplit(settings.network_public_url or '').hostname
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', 'testserver', *([public_host] if public_host else [])])
 
     @app.exception_handler(LabError)
     async def lab_failure(request: Request, exc: LabError):

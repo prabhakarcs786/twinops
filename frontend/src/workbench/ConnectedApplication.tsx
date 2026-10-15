@@ -63,7 +63,7 @@ export function ConnectedApplication({ connection, error, canOperate, onUpdate, 
       {latestIssue?.incidentId && <a href={`/workbench?incident=${encodeURIComponent(latestIssue.incidentId)}`}>Review latest investigation</a>}
     </div>
     <div className="lab-exercise">
-      <p className="stage-kicker">Local lab exercise</p>
+      <p className="stage-kicker">Lab exercise</p>
       <label className="field"><span>Inject fault</span><select value={fault} onChange={(e) => setFault(e.target.value as FaultId | 'random')} disabled={Boolean(busy) || !canOperate}>
         <option value="random">Random · sealed</option>
         {SUPPORTED_FAULTS.map((id) => <option key={id} value={id}>{FAULT_INFO[id].label}</option>)}
@@ -74,7 +74,7 @@ export function ConnectedApplication({ connection, error, canOperate, onUpdate, 
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void act('reset')} disabled={!canOperate || !ready || !connection?.exercise?.canReset || Boolean(busy)}><RotateCcw size={14} aria-hidden="true" />{busy === 'reset' ? 'Resetting…' : 'Reset lab'}</button>
       </div>
       {latestIssue?.investigationStatus === 'finished' && latestIssue.status === 'open' && <p className="application-note">The investigation finished with an unresolved issue. Review its evidence or reset the lab before another exercise.</p>}
-      <p className="application-note">{!canOperate ? 'Investigator access is required to run an exercise.' : connection?.recoveryRequired ? 'Operator recovery is required. Open Metro Network to inspect the lab.' : ready && !connection?.exercise ? 'Exercise controls are unavailable from this connection. Open Metro Network to run an exercise.' : connection?.issues[0]?.investigationStatus === 'investigating' ? 'An investigation owns the lab. Complete or reject its approval before another exercise.' : 'Injects a fault into the local lab. TwinOps detects the symptoms and tests repairs in its isolated twin.'}</p>
+      <p className="application-note">{!canOperate ? 'Investigator access is required to run an exercise.' : connection?.recoveryRequired ? 'Operator recovery is required. Open Metro Network to inspect the lab.' : ready && !connection?.exercise ? 'Exercise controls are unavailable from this connection. Open Metro Network to run an exercise.' : connection?.issues[0]?.investigationStatus === 'investigating' ? 'An investigation owns the lab. Complete or reject its approval before another exercise.' : 'Injects a fault into the Metro lab network. TwinOps detects the symptoms and tests repairs in its isolated twin.'}</p>
       {actionError && <p className="application-error" role="alert">{actionError}</p>}
       {notice && <p className="application-note" role="status">{notice}</p>}
     </div>

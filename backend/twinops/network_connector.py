@@ -103,14 +103,14 @@ class NetworkMonitor:
         self.registry = registry
         self.client = NetworkClient(registry.settings)
         self.task: asyncio.Task | None = None
-        self.status: dict[str, Any] = {'configured': True, 'connected': False, 'name': 'Metro Network', 'detail': 'Connecting to local application', 'issues': []}
+        self.status: dict[str, Any] = {'configured': True, 'connected': False, 'name': 'Metro Network', 'detail': 'Connecting to the network application', 'issues': []}
 
     def update_status(self, remote: dict[str, Any]):
         """Expose measured dashboard data, without the exercise referee's sealed evidence."""
         issue = remote.get('issue')
         probes = (remote.get('observation') or {}).get('probes', [])
         self.status.update(connected=True, ready=remote['ready'], detail=remote.get('error') or 'Automatic detection active · checked every 5 seconds',
-                           url=self.registry.settings.network_url, checkedAt=remote.get('checkedAt'),
+                           url=self.registry.settings.network_public_url or self.registry.settings.network_url, checkedAt=remote.get('checkedAt'),
                            recoveryRequired=remote['recoveryRequired'] and not remote.get('activity'),
                            operation=remote.get('operation'),
                            topology=remote['topology'], probes=[p for p in probes if p.get('kind') == 'journey'],
