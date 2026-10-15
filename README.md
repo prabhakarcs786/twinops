@@ -36,7 +36,21 @@ The demo runs one shared lab. Coordinate a session with the project host before 
 
 ### Preview
 
-![Metro Network's deployed dashboard with live journeys and safety guardrails](docs/images/metro-network-healthy.png)
+**Product overview**
+
+[![TwinOps product overview with its repair workflow and isolated digital twin illustration](docs/images/product-overview.webp)](https://twinops-live-705406130795.europe-west1.run.app/)
+
+*The product landing page explains the problem and workflow through a deterministic browser demonstration.*
+
+**TwinOps workbench**
+
+[![TwinOps workbench showing its investigation pipeline and connected Metro Network lab](docs/images/twinops-workbench.webp)](https://twinops-live-705406130795.europe-west1.run.app/workbench)
+
+*The live workbench connected to a healthy Metro lab, awaiting an incident. Candidate tests, evidence and approval appear here during an investigation.*
+
+**Metro Network**
+
+[![Metro Network's deployed dashboard with live journeys and safety guardrails](docs/images/metro-network-healthy.png)](https://twinops-live-705406130795.europe-west1.run.app/metro/)
 
 *Hosted readiness snapshot from 15 October 2026: four journeys healthy, synthetic customer counts, no active incident. See the submission article for the architecture and the judge guide for the full repair workflow.*
 

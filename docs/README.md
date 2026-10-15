@@ -14,4 +14,4 @@ Start with the [project README](../README.md) for the problem, live applications
 - [Recorded hosted repair](evidence/recorded-demo.json): Gemini-call provenance, selected change, approval and measured recovery from the 15 October 2026 demonstration. Credentials and full approval tokens are omitted.
 - [Foundation evaluation](evidence/foundation-evaluation.json): 320 deterministic model cases, including repairs and expected abstentions. This evaluates the runbook/model path, separately from the hosted Gemini demonstration.
 
-The two files in `images/` illustrate the hosted lab and architecture in the submission overview. The repository keeps the current reader documentation and evidence; historical proposals and video production assets are outside this public documentation set.
+The four files in `images/` show the product overview, workbench, Metro lab and architecture for the project README and submission overview. The repository keeps the current reader documentation and evidence; historical proposals and video production assets are outside this public documentation set.
