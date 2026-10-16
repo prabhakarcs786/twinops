@@ -25,7 +25,7 @@ The idea is simple: an AI can be wrong while exploring a repair, but its proposa
 | Deployed prototype | [TwinOps workbench](https://twinops-live-705406130795.europe-west1.run.app/workbench) |
 | Connected application | [Metro Network](https://twinops-live-705406130795.europe-west1.run.app/metro/) |
 | Product overview | [TwinOps overview](https://twinops-live-705406130795.europe-west1.run.app/) |
-| Presentation | [Official-template PDF deck](TwinOps_Deck.pdf) and [editable PowerPoint](TwinOps_Deck.pptx); the [interactive overview](https://twinops-live-705406130795.europe-west1.run.app/deck) is a separate product presentation |
+| Presentation | [Official-template PDF deck](TwinOps_Deck.pdf) and [editable PowerPoint](TwinOps_Deck.pptx); the [online deck](https://twinops-live-705406130795.europe-west1.run.app/deck) presents the same 13 slides with readable explanations |
 | Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - public |
 | Public demo video | [Watch TwinOps on YouTube](https://youtu.be/0LjDHiUBy0Y) — 3:00 end-to-end walkthrough of the deployed application |
 | Judge instructions | [Judge guide](JUDGE_GUIDE.md) |
@@ -82,7 +82,7 @@ AI trace records distinguish model requests, rejected output and runbook fallbac
 
 ![TwinOps architecture showing Cloud Run, configured Vertex AI and Gemini, the isolated protocol lab, Proof Gate and approval gateway](images/cloud-run-architecture.png)
 
-*Architecture illustration from the interactive product overview, rendered on 15 October 2026. The official-template submission deck contains an editable architecture diagram. Deployment and execution evidence is scoped below.*
+*Architecture from slide 7 of the refreshed official-template deck, 16 October 2026. Blue connectors show observation, AI proposals and experiments; green connectors show approved changes and recovery checks. Metro and the twin are separate protocol networks. The PowerPoint retains editable diagram elements.*
 
 | Component | Responsibility |
 |---|---|

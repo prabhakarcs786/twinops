@@ -1,381 +1,91 @@
-import { ArrowLeft, ArrowRight, Printer } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Brand } from '../components/Brand.tsx';
-import { fetchReports, type EvaluationReport } from '../api/live.ts';
-import { Link } from '../lib/router.tsx';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, Download, ExternalLink, Play } from 'lucide-react';
+import presentation from './presentation.json';
 import '../styles/deck.css';
 
-/** Pitch deck: 10 slides, keyboard navigable, prints to a 16:9 PDF. Historical measurements retain their scope and date. */
+const slides = presentation.slides;
 
-interface Slide {
-  title: string;
-  body: ReactNode;
+function indexFromHash() {
+  const number = Number(window.location.hash.slice(1));
+  return Number.isInteger(number) && number >= 1 && number <= slides.length ? number - 1 : 0;
 }
 
-const LOOP = ['Observe', 'Diagnose', 'Reproduce in twin', 'Experiment', 'Challenge', 'Proof Gate', 'Human approval', 'Apply'];
-
-const LAB_RUNS = [
-  { fault: 'F1 · Route misconfiguration', verdict: 'PASS UNDER DEFINED TESTS', tone: 'ok', s: '58.5', note: 'B superseded by B′ after a real IPv6 timeout' },
-  { fault: 'F2 · DNS failure', verdict: 'PASS UNDER DEFINED TESTS', tone: 'ok', s: '41.1', note: 'C superseded by C′: warm resolver cache still stale' },
-  { fault: 'F3 · Certificate expiry', verdict: 'PASS WITH WARNINGS', tone: 'warn', s: '34.4', note: 'reload drains long-lived sessions (G7 warning)' },
-  { fault: 'F0 · Link flap (unsupported)', verdict: 'INCONCLUSIVE', tone: 'fail', s: '18.3', note: 'not reproducible in the twin, so no fix proposed' },
-];
-
-const CONTROLS = [
-  'Target drifts after the snapshot → approval invalidated',
-  'Approval hash ≠ tested change → refused',
-  'Operator rejects → zero writes',
-  'Planner emits an off-catalogue action → never executed',
-  'Unsupported physical fault → INCONCLUSIVE, zero experiments',
-  'Instruction-like text in device logs → treated as data',
-];
-
-function MeasuredEvidence() {
-  const [reports, setReports] = useState<EvaluationReport[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    let active = true;
-    fetchReports().then((items) => { if (active) setReports(items.sort((first, second) => second.generatedAt.localeCompare(first.generatedAt))); })
-      .catch(() => undefined).finally(() => { if (active) setLoaded(true); });
-    return () => { active = false; };
-  }, []);
-  const latest = reports.find((report) => report.planner.kind === 'llm');
-  const baseline = latest && reports.find((report) => report.planner.kind === 'runbook' && report.pack === latest.pack
-    && report.suiteVersion === latest.suiteVersion && report.seeds === latest.seeds && report.startSeed === latest.startSeed
-    && (report.variant ?? 'standard') === (latest.variant ?? 'standard'));
-  const paired = latest && baseline;
-  return <div className="d-measured" data-evidence-ready={loaded}>
-    {paired ? <>
-      <p className="d-eyebrow">{latest.planner.provider} · {latest.planner.model} vs runbook</p>
-      <table className="d-table"><caption>{latest.pack} · {latest.variant ?? 'standard'} · seeds {latest.startSeed}–{latest.startSeed + latest.seeds - 1}</caption>
-        <thead><tr><th scope="col">Fault</th><th scope="col">Runbook</th><th scope="col">Model, no fallback</th><th scope="col">Unsafe pass</th></tr></thead>
-        <tbody>{Object.entries(latest.byFault).map(([fault, row]) => <tr key={fault}><th scope="row">{fault.replaceAll('_', ' ')}</th><td>{baseline.byFault[fault]?.verdictOk ?? '-'}/{baseline.byFault[fault]?.runs ?? '-'}</td><td>{row.fallbackFreeSuccess ?? '-'}/{row.runs}</td><td>{row.unsafePassed}</td></tr>)}</tbody>
-      </table>
-      <p className="d-foot">{latest.planner.version} · {latest.suiteVersion} · measured {new Date(latest.generatedAt).toLocaleDateString()}. {latest.seeds < 10 ? 'Smoke sample only, not a reliability estimate.' : 'Synthetic scenarios, not production reliability.'} Memory disabled in paired evaluations.</p>
-    </> : <>
-      <p className="d-eyebrow">Paired evidence not loaded</p>
-      <p className="d-foot">No model advantage is claimed without comparable reports. Saved comparisons are available in the connected workbench.</p>
-    </>}
-    <ul className="d-list d-small">{CONTROLS.slice(0, 4).map((control) => <li key={control}>{control}</li>)}</ul>
-  </div>;
+function showSlide(index: number) {
+  const next = Math.max(0, Math.min(slides.length - 1, index));
+  window.location.hash = String(next + 1);
 }
 
-const SLIDES: Slide[] = [
-  {
-    title: 'What if AI had to prove its fix?',
-    body: (
-      <div className="d-hero">
-        <Brand />
-        <p className="d-eyebrow">Google Cloud AI Builder Cup 2026<br />Future of Work &amp; Enterprise Productivity</p>
-        <h2>
-          What if AI had to <span className="grad-text">prove its fix</span> before touching production?
-        </h2>
-        <p className="d-lead">TwinOps reproduces an incident in an isolated digital twin, tests competing fixes there, attacks its own best answer and hands a human only the change that survived the evidence.</p>
-        <p className="d-kicker">Design principle: don’t trust the AI’s reasoning. Make it prove the change.</p>
-      </div>
-    ),
-  },
-  {
-    title: 'The problem: fixes that sound right',
-    body: (
-      <div className="d-cols">
-        <div>
-          <p className="d-lead">Under incident pressure, the first fix that restores service wins, whether or not it is safe.</p>
-          <ul className="d-list">
-            <li>
-              <strong>Tempting fixes</strong> such as disabling a filter, pinning hosts or turning off TLS validation make the symptom go away and open new risk.
-            </li>
-            <li>
-              <strong>Change review is re-investigation.</strong> Approvers redo the diagnosis because there is no shared evidence.
-            </li>
-            <li>
-              <strong>AI suggestions are not proof.</strong> A fluent explanation is not evidence, and a model can be steered by text in logs.
-            </li>
-          </ul>
-        </div>
-        <div className="d-card d-card-warn">
-          <p className="d-eyebrow">Real example from our lab</p>
-          <p>
-            Disabling the edge filter restores every customer journey <em>and</em> exposes the management console to an untrusted edge.
-          </p>
-          <p className="d-mono">NEG-1 admin console 10.99.0.10:8443 answered HTTP from untrusted 10.23.0.1</p>
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'The TwinOps loop',
-    body: (
-      <>
-        <ol className="d-loop">
-          {LOOP.map((step, i) => (
-            <li key={step} className={i >= 6 ? 'is-human' : i >= 2 ? 'is-twin' : ''}>
-              <span>{i + 1}</span>
-              {step}
-            </li>
-          ))}
-        </ol>
-        <div className="d-cols d-cols-3">
-          <div className="d-card">
-            <p className="d-eyebrow">Allowed to be wrong safely</p>
-            <p>Candidates are tested on an isolated twin. The Cloud Run lab runs real routing, DNS and TLS in Linux network namespaces. The browser engine uses simulated probes.</p>
-          </div>
-          <div className="d-card">
-            <p className="d-eyebrow">Attacks its own answer</p>
-            <p>The challenge role tries IPv6 parity, a secondary node failure, warm caches and session continuity against the best fix.</p>
-          </div>
-          <div className="d-card">
-            <p className="d-eyebrow">Production stays read-only</p>
-            <p>The only write path is an apply gateway that needs a human approval bound to the change hash and the target-state hash.</p>
-          </div>
-        </div>
-      </>
-    ),
-  },
-  {
-    title: 'Historical lab run: a tested routing repair',
-    body: (
-      <div className="d-cols">
-        <ol className="d-run">
-          <li className="t-ok">Fault reproduced in the twin: 10/10 symptoms match</li>
-          <li className="t-fail">A · Restart routing → REJECTED: J1, J3 still fail (TCP timeout, curl exit 28)</li>
-          <li className="t-warn">B · Roll back prefix-list → IPv6 challenge fails → superseded</li>
-          <li className="t-ok">B′ · Remove EDGE-IN seq 30 only → 7/7 automated gates pass</li>
-          <li className="t-fail">U · Disable the filter (evaluation case) → REJECTED: admin console exposed</li>
-          <li className="t-ok">Human approves the exact hash → applied → 11 real post-checks pass</li>
-        </ol>
-        <div className="d-stats">
-          <div>
-            <span className="d-num">58.5 s</span>
-            <span>historical runbook smoke, 9 Oct 2026 · FRR, CoreDNS, nginx in Containerlab</span>
-          </div>
-          <div>
-            <span className="d-num">0</span>
-            <span>production writes during diagnosis</span>
-          </div>
-          <div>
-            <span className="d-num">2</span>
-            <span>unsafe or insufficient fixes rejected with evidence</span>
-          </div>
-          <Link to="/workbench" className="btn btn-primary d-noprint">
-            Try it: break the network <ArrowRight size={16} aria-hidden="true" />
-          </Link>
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Architecture',
-    body: (
-      <div className="d-arch">
-        <div className="d-arch-row">
-          <div className="d-box">Web workbench · React<small>SSE event stream, evidence tabs, approval dialog</small></div>
-          <div className="d-arrow" aria-hidden="true">⇄</div>
-          <div className="d-box d-box-strong">FastAPI + SSE · Cloud Run<small>Live deployment checked 15 Oct 2026 · local, ephemeral SQLite evidence</small></div>
-        </div>
-        <div className="d-arch-grid">
-          <div className="d-box d-ai">Gemini · Vertex AI<small>Gemini 2.5 Flash configured · typed proposals, bounded revisions, visible fallback</small></div>
-          <div className="d-box d-twin">Isolated protocol lab<small>Cloud Run: separate application + twin networks in Linux namespaces · FRR, CoreDNS, nginx</small></div>
-          <div className="d-box d-ok">Proof Gate G1–G8<small>deterministic code: reproduction, restore, regression, challenges, policy, rollback, latency, human</small></div>
-          <div className="d-box d-prod">Apply gateway<small>approval bound to change + state · post-checks · verified rollback or operator recovery</small></div>
-        </div>
-        <p className="d-foot">Cloud Build → Artifact Registry → Cloud Run. Vertex AI provides model access; Secret Manager holds the operator credential. Deployment checks establish lab readiness; model-call and recovery evidence belong to each run.</p>
-      </div>
-    ),
-  },
-  {
-    title: 'AI proposes. Evidence decides.',
-    body: (
-      <div className="d-cols">
-        <div className="d-card d-card-ai">
-          <p className="d-eyebrow">Gemini through the Google Gen AI SDK</p>
-          <ul className="d-list">
-            <li>Ranked hypotheses that cite evidence IDs (JSON schema)</li>
-            <li>Fix proposals from a typed action catalogue</li>
-            <li>Failed tests guide a bounded repair and fresh retest</li>
-            <li>Approver briefing, labelled non-authoritative</li>
-          </ul>
-        </div>
-        <div className="d-card d-card-ok">
-          <p className="d-eyebrow">Code does the judging</p>
-          <ul className="d-list">
-            <li>Twin, probes, gates and policy are deterministic</li>
-            <li>Catalogue actions and source IDs checked; hypotheses remain interpretations</li>
-            <li>Device logs are fenced as untrusted data</li>
-            <li>Historical fixes retested; past approval never reused</li>
-          </ul>
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Evidence: evaluation harness',
-    body: (
-      <div className="d-cols">
-        <div>
-          <table className="d-table">
-            <caption>Historical runbook lab smoke · 9 Oct 2026 · one run per fault</caption>
-            <thead>
-              <tr>
-                <th scope="col">Fault</th>
-                <th scope="col">Verdict</th>
-                <th scope="col">Compute</th>
-              </tr>
-            </thead>
-            <tbody>
-              {LAB_RUNS.map((r) => (
-                <tr key={r.fault}>
-                  <th scope="row">
-                    {r.fault}
-                    <small>{r.note}</small>
-                  </th>
-                  <td className={`t-${r.tone}`}>{r.verdict}</td>
-                  <td className="d-mono">{r.s} s</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <MeasuredEvidence />
-      </div>
-    ),
-  },
-  {
-    title: 'Impact on enterprise operations work',
-    body: (
-      <div className="d-cols d-cols-3">
-        <div className="d-card">
-          <p className="d-eyebrow">On-call engineer</p>
-          <p>Starts from a reproduced fault and tested candidates instead of a blank terminal. The tempting fix is rejected before anyone tries it.</p>
-        </div>
-        <div className="d-card">
-          <p className="d-eyebrow">Change approver</p>
-          <p>Reviews a Proof Pack covering evidence, diff, rollback rehearsal and untested conditions, then approves a hash rather than a story.</p>
-        </div>
-        <div className="d-card">
-          <p className="d-eyebrow">Organisation</p>
-          <p>Past successful changes become candidates for fresh verification. A similar incident never imports an old approval.</p>
-        </div>
-        <p className="d-foot d-span">
-          Theme: Future of Work &amp; Enterprise Productivity. Read-only trials compare review time and gate agreement with raw evidence and a Proof Pack. Human trials are pending; no time savings are claimed.
-        </p>
-      </div>
-    ),
-  },
-  {
-    title: 'Scalability: packs and twin backends',
-    body: (
-      <div className="d-cols">
-        <div>
-          <ul className="d-list">
-            <li>
-              <strong>Scenario packs</strong>: regional telecom core and hybrid enterprise today. The topology, journeys and fault catalogue are data.
-            </li>
-            <li>
-              <strong>Twin backends</strong>: a model twin, local Containerlab, and the deployed Linux namespace lab share one contract. Kubernetes, cloud-config sandboxes and CI/CD are future adapters.
-            </li>
-            <li>
-              <strong>Planner providers</strong>: Gemini API, Vertex AI, any OpenAI-compatible endpoint, or replay. The planner can change without touching the Proof Gate.
-            </li>
-          </ul>
-        </div>
-        <div className="d-card">
-          <p className="d-eyebrow">Honest limits today</p>
-          <ul className="d-list d-small">
-            <li>Local SQLite preserves evidence. Cloud Run instance replacement needs external storage; one service process owns a target.</li>
-            <li>Surge and long-lived session behaviour are listed as untested in every Proof Pack.</li>
-            <li>The lab is synthetic. Production would start in read-only shadow mode.</li>
-          </ul>
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: 'Try TwinOps and take it into a shadow pilot',
-    body: (
-      <div className="d-cols">
-        <div>
-          <ol className="d-list d-num-list">
-            <li>Now deployed: TwinOps + Metro Network + isolated protocol lab on Cloud Run; Gemini configured through Vertex AI</li>
-            <li>Next: retain Gemini recovery evidence and measure operator review time; production identity, storage and monitoring</li>
-            <li>Read-only shadow mode next to a real NOC: verdicts recorded, nothing applied</li>
-          </ol>
-          <p className="d-lead">
-            <strong>Ask:</strong> one operations team, an approved LLM endpoint and a lab slice for a four-week shadow pilot.
-          </p>
-        </div>
-        <div className="d-card">
-          <p className="d-eyebrow">Live prototype</p>
-          <p><a href="https://twinops-live-705406130795.europe-west1.run.app/workbench">Open TwinOps workbench ↗</a></p>
-          <p><a href="https://twinops-live-705406130795.europe-west1.run.app/metro/">Open Metro Network ↗</a></p>
-          <p className="d-foot">Approval requires the host’s operator passcode. Coordinate a shared-lab session. History is lost when the Cloud Run instance is replaced.</p>
-        </div>
-      </div>
-    ),
-  },
-];
-
-const clamp = (n: number) => Math.min(SLIDES.length - 1, Math.max(0, n));
-const fromHash = () => clamp((Number.parseInt(window.location.hash.slice(1), 10) || 1) - 1);
-
+/** The web viewer and submission PDF use the same official-template slide renders. */
 export function Deck() {
-  const [index, setIndex] = useState(fromHash);
+  const [index, setIndex] = useState(indexFromHash);
+  const slide = slides[index];
 
   useEffect(() => {
-    window.history.replaceState(null, '', `#${index + 1}`);
-  }, [index]);
+    const sync = () => setIndex(indexFromHash());
+    window.addEventListener('hashchange', sync);
+    if (!window.location.hash) window.history.replaceState(null, '', '#1');
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLElement && e.target.closest('button, a, input, select, textarea')) {
-        if (e.key === ' ' || e.key === 'Enter') return;
-      }
-      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) setIndex((i) => clamp(i + 1));
-      else if (['ArrowLeft', 'PageUp'].includes(e.key)) setIndex((i) => clamp(i - 1));
-      else if (e.key === 'Home') setIndex(0);
-      else if (e.key === 'End') setIndex(SLIDES.length - 1);
-      else return;
-      e.preventDefault();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('input, select, textarea, button, a, summary, [contenteditable="true"]')) return;
+      const destination = {
+        ArrowRight: index + 1, PageDown: index + 1, ' ': index + 1,
+        ArrowLeft: index - 1, PageUp: index - 1, Home: 0, End: slides.length - 1,
+      }[event.key];
+      if (destination === undefined) return;
+      event.preventDefault();
+      showSlide(destination);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [index]);
 
   return (
-    <div className="deck">
-      <main id="main" className="deck-stage" aria-roledescription="carousel" aria-label="TwinOps pitch deck">
-        {SLIDES.map((slide, i) => (
-          <section key={slide.title} className="slide" hidden={i !== index} aria-roledescription="slide" aria-label={`${i + 1} of ${SLIDES.length}: ${slide.title}`}>
-            {i > 0 && (
-              <header className="slide-head">
-                <p className="d-eyebrow">
-                  {String(i + 1).padStart(2, '0')} / {SLIDES.length}
-                </p>
-                <h1>{slide.title}</h1>
-              </header>
-            )}
-            {i === 0 && <h1 className="sr-only">{slide.title}</h1>}
-            <div className="slide-body">{slide.body}</div>
-          </section>
-        ))}
+    <div className="submission-deck" data-deck-version={presentation.version}>
+      <header className="submission-deck-header">
+        <div>
+          <a className="deck-home" href="/">TwinOps <span>/ HackSmith</span></a>
+          <h1>Submission presentation</h1>
+          <p>The same 13 slides as the official-template PDF.</p>
+        </div>
+        <div className="submission-deck-links">
+          <a href={presentation.videoUrl}><Play size={16} aria-hidden="true" /> Watch 3-minute demo</a>
+          <a href={presentation.pdfUrl}><Download size={16} aria-hidden="true" /> Download submission PDF</a>
+        </div>
+      </header>
+      <main id="main" className="submission-deck-main">
+        <section className="submission-deck-slide" role="region" aria-label={`${index + 1} of ${slides.length}: ${slide.title}`}>
+          <a className="deck-image-link" href={slide.image} target="_blank" rel="noreferrer" aria-label={`Open full-size slide ${index + 1}: ${slide.title}`}>
+            <img key={slide.image} src={slide.image} width={2400} height={1350} alt={slide.alt} fetchPriority="high" />
+          </a>
+        </section>
+        <nav className="submission-deck-controls" aria-label="Slides">
+          <button type="button" onClick={() => showSlide(index - 1)} disabled={index === 0} aria-label="Previous slide"><ArrowLeft size={18} aria-hidden="true" /> Previous</button>
+          <label className="deck-slide-picker">
+            <span className="sr-only">Choose a slide</span>
+            <select value={index} onChange={(event) => showSlide(Number(event.target.value))}>
+              {slides.map((item, i) => <option key={item.number} value={i}>{item.number} / {slides.length} · {item.title}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={() => showSlide(index + 1)} disabled={index === slides.length - 1} aria-label="Next slide">Next <ArrowRight size={18} aria-hidden="true" /></button>
+          <span className="sr-only" aria-live="polite">Slide {index + 1} of {slides.length}: {slide.title}</span>
+        </nav>
+        <p className="deck-keyboard-hint">Use the arrow keys to navigate. Select the slide image to open it at full size.</p>
+        <section className="deck-reading" aria-labelledby="deck-reading-title">
+          <h2 id="deck-reading-title">{slide.title}</h2>
+          {slide.paragraphs.map((paragraph, i) => <p key={i}>{paragraph}</p>)}
+          {slide.links.length > 0 && <ul>{slide.links.map((link) => <li key={link.url}><a href={link.url}>{link.label} <ExternalLink size={14} aria-hidden="true" /></a></li>)}</ul>}
+        </section>
       </main>
-      <nav className="deck-nav" aria-label="Slides">
-        <Link to="/" className="btn btn-ghost btn-sm">
-          Overview
-        </Link>
-        <button type="button" className="icon-btn" onClick={() => setIndex((i) => clamp(i - 1))} disabled={index === 0} aria-label="Previous slide">
-          <ArrowLeft size={18} />
-        </button>
-        <span className="deck-count" aria-live="polite">
-          {index + 1} / {SLIDES.length}
-        </span>
-        <button type="button" className="icon-btn" onClick={() => setIndex((i) => clamp(i + 1))} disabled={index === SLIDES.length - 1} aria-label="Next slide">
-          <ArrowRight size={18} />
-        </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}>
-          <Printer size={15} aria-hidden="true" /> Save as PDF
-        </button>
-      </nav>
+      <footer className="submission-deck-footer">
+        <p>Recorded evidence: 15 October 2026. Synthetic network prototype; production reliability and time savings remain unvalidated.</p>
+        <a href="/workbench">Open workbench</a>
+        <a href={presentation.pptxUrl}>Editable PowerPoint</a>
+      </footer>
     </div>
   );
 }

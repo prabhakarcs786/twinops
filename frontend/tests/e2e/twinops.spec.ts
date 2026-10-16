@@ -108,14 +108,35 @@ test('presentation view distinguishes tested coverage and lets reviewers compare
 
 test('pitch deck navigates by keyboard and every slide passes accessibility checks', async ({ page }) => {
   await page.goto('/deck');
-  await expect(page.getByRole('region', { name: /^1 of 10/ })).toBeVisible();
-  for (let i = 1; i <= 10; i++) {
-    await expect(page.getByRole('region', { name: new RegExp(`^${i} of 10`) })).toBeVisible();
-    await expect(page.getByRole('region', { name: / of 10: / })).toHaveCount(1);
+  await expect(page.getByRole('region', { name: /^1 of 13/ })).toBeVisible();
+  for (let i = 1; i <= 13; i++) {
+    await expect(page.getByRole('region', { name: new RegExp(`^${i} of 13`) })).toBeVisible();
+    await expect(page.getByRole('region', { name: / of 13: / })).toHaveCount(1);
+    await expect(page.locator('.submission-deck-slide img')).toHaveJSProperty('complete', true);
+    await expect(page.locator('.submission-deck-slide img')).not.toHaveJSProperty('naturalWidth', 0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expectNoA11yViolations(page);
     await page.keyboard.press('ArrowRight');
   }
-  await expect(page).toHaveURL(/#10$/);
+  await expect(page).toHaveURL(/#13$/);
   await page.keyboard.press('Home');
-  await expect(page.getByRole('region', { name: /^1 of 10/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: /^1 of 13/ })).toBeVisible();
+});
+
+
+test('pitch deck deep links, browser history and submission links stay usable', async ({ page }) => {
+  await page.goto('/deck#7');
+  await expect(page.getByRole('region', { name: /^7 of 13/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Next slide', exact: true }).click();
+  await expect(page).toHaveURL(/#8$/);
+  await page.goBack();
+  await expect(page.getByRole('region', { name: /^7 of 13/ })).toBeVisible();
+  await page.getByLabel('Choose a slide').selectOption('8');
+  await expect(page.getByRole('region', { name: /^9 of 13/ })).toBeVisible();
+  await expect(page.locator('.deck-reading')).toContainText('Berlin and Hamburg');
+  await expect(page.getByRole('link', { name: 'Watch 3-minute demo' })).toHaveAttribute('href', 'https://youtu.be/0LjDHiUBy0Y');
+  await expect(page.getByRole('link', { name: 'Download submission PDF' })).toHaveAttribute('href', /raw.githubusercontent.com\/prabhakarcs786\/twinops\/main\/docs\/TwinOps_Deck.pdf$/);
+  await page.goto('/deck#999');
+  await expect(page.getByRole('region', { name: /^1 of 13/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Previous slide', exact: true })).toBeDisabled();
 });

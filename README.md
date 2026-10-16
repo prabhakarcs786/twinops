@@ -17,7 +17,7 @@ TwinOps helps network engineers and change approvers turn scattered incident evi
 | [TwinOps workbench](https://twinops-live-705406130795.europe-west1.run.app/workbench) | Investigation, candidate tests, evidence and approval |
 | [Metro Network](https://twinops-live-705406130795.europe-west1.run.app/metro/) | Measured service health and controlled fault exercises |
 | [Product overview](https://twinops-live-705406130795.europe-west1.run.app/) | Problem, workflow and deterministic browser demonstration |
-| [Interactive overview deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | Original ten-slide product overview |
+| [Online submission deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | The same 13 slides as the submission PDF, with readable explanations |
 | [PDF submission deck](docs/TwinOps_Deck.pdf) | Completed official competition template |
 | [Editable submission deck](docs/TwinOps_Deck.pptx) | PowerPoint source of the submission PDF |
 | [Demo video on YouTube](https://youtu.be/0LjDHiUBy0Y) | 3:00 end-to-end walkthrough of the deployed application |
@@ -414,8 +414,10 @@ cd frontend && npm run test:live    # real FastAPI: SSE, approval, refresh/histo
 
 ## Pitch deck
 
-Open `/deck`. Use arrow keys to move between slides and **Save as PDF** to export. To regenerate `docs/TwinOps_Deck.pdf`, run `npm run preview` and then `npm run export:deck` (both in `frontend/`).
+Open `/deck` to view the **same 13 official-template slides** as the submission PDF. Arrow keys, the slide selector and numbered URLs such as `/deck#7` support navigation. Every slide has a readable HTML explanation, and the PDF and editable PowerPoint are linked from the viewer.
 
-The deck loads the latest compatible saved planner comparison when connected to the backend. For an evidence-backed PDF from the development server, run `npm --prefix frontend run export:deck -- http://localhost:5173/deck`. Without report access it states that paired evidence is unavailable. Historical lab timings retain their runbook scope and date. Cloud Run deployment and lab readiness were verified on 15 October 2026; a completed Gemini repair and a paired Gemini benchmark still require retained execution evidence.
+The PowerPoint in `docs/TwinOps_Deck.pptx` is the editable source. After changing it, re-export the PDF and slide images in `frontend/public/deck-assets/`, update `frontend/src/deck/presentation.json` with matching explanations and SHA-256 hashes, and run `npm --prefix frontend run verify:deck`. The check detects drift between the submitted files and deployed slide images. Rebuild and redeploy the frontend to publish the refreshed browser deck.
+
+`npm --prefix frontend run export:deck` copies the verified submission PDF to `.local/TwinOps_Deck.pdf`. Pass a destination file path after `--` to choose another location. It does not print the browser page or overwrite the official deck with a separate presentation.
 
 Workbench URL options: `?fault=route_misconfig|dns_failure|cert_expiry|unsupported_link_flap`, `?speed=instant`, `?autostart=1`, `?pack=enterprise`, `?engine=local`, `?view=presentation`, `?incident=<saved-id>`.
