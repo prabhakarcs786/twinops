@@ -580,18 +580,18 @@
     "decidedAt": "2026-10-15T18:15:22.156990Z"
   },
   "video": {
-    "duration": 178,
+    "duration": 180,
     "actualAppFootageSeconds": 159,
     "nativeCapture": [
       3840,
       2160
     ],
     "scope": "Actual deployed lab session; time condensed. Illustrations only in opening and closing.",
-    "publicUrl": "https://youtu.be/wyze5IWUEC0"
+    "publicUrl": "https://youtu.be/0LjDHiUBy0Y"
   },
   "sanitizedEvidenceSha256": "86b6278e4d87e31696731d465edb426bdb35761ebe5ea35edf723c76700d1ef8",
   "editorialNotes": [
-    "This record corresponds to the current 2:58 video and replaces the earlier recorded rehearsal; Git history retains that prior public record.",
+    "This record corresponds to the 3:00 submission video. The closing card is two seconds longer than the original edit; the recorded application workflow is unchanged.",
     "Ten actual model calls completed with no fallback in this recorded run; this is not a guarantee for other investigations.",
     "The broad rollback B restored the original journeys but failed the additional Hamburg IPv6 challenge.",
     "G8 remains pending in immutable preapproval candidate gates; the separate approval and applied outcome record the completed decision.",

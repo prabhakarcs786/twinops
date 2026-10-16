@@ -1,6 +1,6 @@
 # TwinOps documentation
 
-Start with the [project README](../README.md) for the problem, live applications and setup, or [watch the 2:58 showcase](https://youtu.be/wyze5IWUEC0).
+Start with the [project README](../README.md) for the problem, live applications and setup, or [watch the 3:00 showcase](https://youtu.be/0LjDHiUBy0Y).
 
 | Read | Purpose |
 |---|---|
@@ -12,7 +12,7 @@ Start with the [project README](../README.md) for the problem, live applications
 
 ## Evidence
 
-- [Recorded hosted repair](evidence/recorded-demo.json): Gemini-call provenance, selected change, approval and measured recovery from the 15 October 2026 run shown in the current 2:58 video. Credentials and full approval tokens are omitted.
+- [Recorded hosted repair](evidence/recorded-demo.json): Gemini-call provenance, selected change, approval and measured recovery from the 15 October 2026 run shown in the current 3:00 video. Credentials and full approval tokens are omitted.
 - [Foundation evaluation](evidence/foundation-evaluation.json): 320 deterministic model cases, including repairs and expected abstentions. This evaluates the runbook/model path, separately from the hosted Gemini demonstration.
 
 The four files in `images/` show the product overview, workbench, Metro lab and architecture for the project README and submission overview. The repository keeps the current reader documentation and evidence; historical proposals and video production assets are outside this public documentation set.

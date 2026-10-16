@@ -8,7 +8,7 @@ Google Cloud AI Builder Cup 2026 · **Future of Work & Enterprise Productivity**
 
 TwinOps helps network engineers and change approvers turn scattered incident evidence into a tested repair and a reviewable Proof Pack. The hosted prototype combines Gemini through Vertex AI, an isolated protocol lab, deterministic verification and human approval.
 
-**[Watch the 2:58 demo on YouTube](https://youtu.be/wyze5IWUEC0)** — follow one real run in the deployed app: introduce a routing fault, watch Gemini investigate, compare twin-tested repairs, review the exact diff, approve, verify recovery and download the Proof Pack. Waiting time is shortened.
+**[Watch the 3:00 demo on YouTube](https://youtu.be/0LjDHiUBy0Y)** — follow one real run in the deployed app: introduce a routing fault, watch Gemini investigate, compare twin-tested repairs, review the exact diff, approve, verify recovery and download the Proof Pack. Waiting time is shortened.
 
 ## Live prototype
 
@@ -20,7 +20,7 @@ TwinOps helps network engineers and change approvers turn scattered incident evi
 | [Interactive overview deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | Original ten-slide product overview |
 | [PDF submission deck](docs/TwinOps_Deck.pdf) | Completed official competition template |
 | [Editable submission deck](docs/TwinOps_Deck.pptx) | PowerPoint source of the submission PDF |
-| [Demo video on YouTube](https://youtu.be/wyze5IWUEC0) | 2:58 end-to-end walkthrough of the deployed application |
+| [Demo video on YouTube](https://youtu.be/0LjDHiUBy0Y) | 3:00 end-to-end walkthrough of the deployed application |
 
 Deployment and lab readiness were checked on **16 October 2026**: after startup, Metro's four customer journeys were healthy, the connector was connected, and the isolated lab reported ready. The hosted service reported **Vertex AI / Gemini 2.5 Flash** as its configured planner. Cloud Run can scale to zero; the workbench may load before Metro finishes starting. Follow the [readiness instructions](docs/JUDGE_GUIDE.md#open-the-prototype) before exercising the lab. Configuration and readiness do not establish a completed Gemini repair; model-call, fallback, approval and recovery evidence must be inspected in a saved investigation.
 
@@ -35,7 +35,7 @@ The demo runs one shared lab. Coordinate a session with the project host before 
 - [Demo walkthrough](docs/JUDGE_GUIDE.md): inspect the application and follow a controlled repair.
 - [Submission overview](docs/SUBMISSION.md): problem, Google AI integration, build process, evidence and intended impact.
 
-**Submission status:** this repository is public. The official-template deck and portal description are in the [submission overview](docs/SUBMISSION.md). The linked YouTube video is the existing 2:58 version; the prepared 3:00 submission edit still needs uploading. After upload, replace the video URL in the deck and documentation, verify the submitted links while signed out, and complete the competition portal.
+**Submission status:** the repository and three-minute demonstration video are public. The official-template deck and portal description are in the [submission overview](docs/SUBMISSION.md). Before submitting, verify the prototype, video and repository links while signed out and complete the competition portal.
 
 ### Preview
 

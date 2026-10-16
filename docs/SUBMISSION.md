@@ -27,7 +27,7 @@ The idea is simple: an AI can be wrong while exploring a repair, but its proposa
 | Product overview | [TwinOps overview](https://twinops-live-705406130795.europe-west1.run.app/) |
 | Presentation | [Official-template PDF deck](TwinOps_Deck.pdf) and [editable PowerPoint](TwinOps_Deck.pptx); the [interactive overview](https://twinops-live-705406130795.europe-west1.run.app/deck) is a separate product presentation |
 | Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - public |
-| Public demo video | [Watch TwinOps on YouTube](https://youtu.be/wyze5IWUEC0) — 2:58 end-to-end walkthrough of the deployed application |
+| Public demo video | [Watch TwinOps on YouTube](https://youtu.be/0LjDHiUBy0Y) — 3:00 end-to-end walkthrough of the deployed application |
 | Judge instructions | [Judge guide](JUDGE_GUIDE.md) |
 
 Competition references: [published requirements](https://aibuildercup.com/themes.html) and [submission FAQ](https://aibuildercup.com/Faqs.html).
@@ -45,7 +45,7 @@ Competition references: [published requirements](https://aibuildercup.com/themes
 5. Have the authorized host approve the exact tested change, then compare fresh recovery probes in both apps and export the Proof Pack.
 6. After the exercise finishes, check that the unsupported link-flap case stops or escalates without guessing a repair.
 
-Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/wyze5IWUEC0) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
+Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/0LjDHiUBy0Y) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
 
 ## Why This Problem Matters
 
@@ -150,10 +150,10 @@ The next delivery steps are an exploratory operator study and a read-only shadow
 
 ## Final Submission Handoff
 
-The project owner confirmed the **three-minute video requirement** on 16 October 2026. A 3:00 edit preserves the same recorded workflow and adds two seconds to the closing card. The [currently uploaded video](https://youtu.be/wyze5IWUEC0) is still 2:58; upload the 3:00 version and replace its link here, in the README, judge guide, documentation index, recorded-demo metadata and both deck formats before submitting. Do not describe the existing YouTube upload as the three-minute edit.
+The **three-minute submission video** is [available on YouTube](https://youtu.be/0LjDHiUBy0Y). It preserves the recorded workflow and includes the extended closing card. The README, judge guide, documentation index, recorded-demo metadata and both deck formats link to this submission version.
 
 The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately.
 
 Use the **official-template PDF** as the pitch-deck attachment. It covers team details, the idea, opportunities, implemented features, process flow, interface, architecture, technology, prototype snapshots, benchmarking, future development and public links. The organizer's download-instruction slide, empty spare slide and optional cost-estimate slide are omitted. The editable PowerPoint is retained alongside the PDF.
 
-The repository is already public. Before final submission, verify the new video and all submitted links while signed out, wait for Metro and the twin to report ready, and enter the public repository, final video and workbench URLs in the HackSmith competition entry. Keep the Cloud Run deployment, Vertex AI access and billing active through evaluation. The shared lab can scale to zero; the [judge guide](JUDGE_GUIDE.md#open-the-prototype) explains startup readiness and private approval access.
+The repository is already public. Before final submission, verify the video and all submitted links while signed out, wait for Metro and the twin to report ready, and enter the public repository, final video and workbench URLs in the HackSmith competition entry. Keep the Cloud Run deployment, Vertex AI access and billing active through evaluation. The shared lab can scale to zero; the [judge guide](JUDGE_GUIDE.md#open-the-prototype) explains startup readiness and private approval access.
