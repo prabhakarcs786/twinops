@@ -1,166 +1,15 @@
 {
-  "schemaVersion": "twinops-video-evidence-1",
-  "incidentId": "inc-net-a58999961e224d95b7f1bfffe7ed4ae6",
-  "verifiedAt": "2026-10-15T09:35:52.119802+00:00",
-  "status": "applied",
-  "incidentStatus": "closed",
-  "verified": true,
-  "captureKind": "Actual hosted live lab rehearsal; browser actions recorded during the run",
+  "schemaVersion": "recorded-demo-2",
   "sourceBaseUrl": "https://twinops-live-705406130795.europe-west1.run.app",
-  "sourceEndpoints": {
-    "incident": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6",
-    "events": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6/events?follow=false",
-    "metro": "/metro/api/dashboard",
-    "proof-pack": "/api/incidents/inc-net-a58999961e224d95b7f1bfffe7ed4ae6/proof-pack?format=json"
-  },
-  "sourceSha256": {
-    "incident": "1d6224ef2613f9eb46db03a403f92d5e99efaed110b97bad6d4c0d12ab8429a2",
-    "events": "24d61c2e31ffc4744562e1cc6229dbd7258fef217e327b430a9a0066235e51ed",
-    "metro": "10f08757770c0fdb2043e1d5368a1b1b8f592a6fc695f52ec99858df51cb1ea2",
-    "proof-pack": "71fc74fce42a841b4ea7a2055df2dfba7dc2474648b8808ed16954281394e1da"
-  },
+  "captureKind": "Actual hosted live lab rehearsal; browser actions recorded during the run",
+  "incidentId": "inc-net-ed770f19223844eda01c182b59901c35",
+  "capturedAt": "2026-10-15T18:10:40.684Z",
+  "status": "closed",
   "planner": {
     "kind": "llm",
     "provider": "vertex",
     "model": "gemini-2.5-flash"
   },
-  "gemini": {
-    "modelCalls": 10,
-    "tokens": 26594,
-    "modelLatencyMs": 16521,
-    "fallbacks": 1,
-    "discardedValidationItems": 2,
-    "replayedCalls": 0,
-    "calls": [
-      {
-        "role": "diagnose",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 2759,
-        "tokens": 3876,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "diagnose",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 1901,
-        "tokens": 3972,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "diagnose",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 1968,
-        "tokens": 4010,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "propose",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 3075,
-        "tokens": 3420,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "challenge",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 912,
-        "tokens": 679,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "challenge",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 698,
-        "tokens": 631,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "revise",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 1516,
-        "tokens": 3410,
-        "fallback": true,
-        "replay": false,
-        "discarded": [
-          "step 2: unexpected parameter value",
-          "step 2: unexpected parameter via"
-        ],
-        "candidateId": null
-      },
-      {
-        "role": "challenge",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 657,
-        "tokens": 625,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      },
-      {
-        "role": "revise",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 1695,
-        "tokens": 3750,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": "cand-C2"
-      },
-      {
-        "role": "narrate",
-        "model": "gemini-2.5-flash",
-        "provider": "vertex",
-        "call": true,
-        "latencyMs": 1340,
-        "tokens": 2221,
-        "fallback": false,
-        "replay": false,
-        "discarded": [],
-        "candidateId": null
-      }
-    ]
-  },
-  "failingJourneyIds": [
-    "J1",
-    "J3"
-  ],
   "selected": {
     "id": "cand-A",
     "label": "A · Remove the problematic prefix-list entry",
@@ -174,252 +23,478 @@
       }
     ],
     "origin": "llm",
-    "rationale": "The hypothesis states that the 'deny 10.20.0.0/15' rule (seq 30) is causing the route rejections for BER and HAM customers. Removing this specific rule should restore connectivity for these journeys without affecting other filtering rules.",
-    "hash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba",
-    "decision": "pass",
-    "touchedNodes": [
-      "B17"
-    ],
-    "gates": [
-      {
-        "id": "G1",
-        "status": "pass",
-        "reason": "10/10 symptoms reproduced in twin"
-      },
-      {
-        "id": "G2",
-        "status": "pass",
-        "reason": "every affected journey succeeds in the twin"
-      },
-      {
-        "id": "G3",
-        "status": "pass",
-        "reason": "unaffected journeys, negative tests and positive control unchanged"
-      },
-      {
-        "id": "G4",
-        "status": "pass",
-        "reason": "survived 4 challenges"
-      },
-      {
-        "id": "G5",
-        "status": "pass",
-        "reason": "allowed action · blast radius 1 node"
-      },
-      {
-        "id": "G6",
-        "status": "pass",
-        "reason": "rollback rehearsed in twin — state hash restored"
-      },
-      {
-        "id": "G7",
-        "status": "pass",
-        "reason": "within latency budget, no session impact"
-      },
-      {
-        "id": "G8",
-        "status": "pending",
-        "reason": "requires a human approval bound to this change hash"
-      }
-    ],
-    "rollback": {
-      "rehearsed": true,
-      "matches": true,
-      "restoredHash": "8fa762b7c2e8c134bfe130ff377e5270d7c05984f31cb009c222c7138a39aa23"
-    },
-    "challenges": [
-      {
-        "kind": "dual_stack",
-        "ok": true,
-        "detail": "3 IPv6 journeys succeed (real AAAA + TLS over IPv6)",
-        "classification": "measured"
-      },
-      {
-        "kind": "secondary_failure",
-        "ok": true,
-        "detail": "with FRA paused, all remaining journeys succeed",
-        "classification": "measured"
-      },
-      {
-        "kind": "surge_x3",
-        "ok": true,
-        "detail": "Tripled probe concurrency: nine HTTP attempts per journey; 0 failing or over-budget samples. This does not model production traffic volume.",
-        "classification": "measured"
-      },
-      {
-        "kind": "session_continuity",
-        "ok": true,
-        "detail": "no session-affecting process change",
-        "classification": "model-derived"
-      }
-    ]
+    "rationale": "The hypothesis states that the new prefix-list entry (seq 30) is causing routes for BER and HAM to be rejected. Removing this specific entry should restore connectivity for the affected journeys without affecting other configurations.",
+    "hash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba"
   },
+  "reproduction": {
+    "matched": 10,
+    "total": 10,
+    "affectedReproduced": true,
+    "passed": true,
+    "mismatches": [],
+    "outOfScope": [
+      "GW-1: host: NTP offset 38 ms",
+      "MUC: chassis: fan tray 2 speed high"
+    ],
+    "slice": [
+      "BER",
+      "HAM",
+      "FRA",
+      "B17",
+      "DNS-1",
+      "GW-1",
+      "SVC-1"
+    ],
+    "twinProbes": [
+      {
+        "id": "J1",
+        "kind": "journey",
+        "label": "BER customers → svc.demo",
+        "ok": false,
+        "path": [
+          "BER",
+          "B17"
+        ],
+        "failedAt": "B17",
+        "failure": "no_route",
+        "detail": "no return path for 10.20.0.1 — TCP timeout (curl exit 28)"
+      },
+      {
+        "id": "J3",
+        "kind": "journey",
+        "label": "HAM customers → svc.demo",
+        "ok": false,
+        "path": [
+          "HAM",
+          "B17"
+        ],
+        "failedAt": "B17",
+        "failure": "no_route",
+        "detail": "no return path for 10.21.0.1 — TCP timeout (curl exit 28)"
+      },
+      {
+        "id": "J4",
+        "kind": "journey",
+        "label": "FRA customers → api.demo",
+        "ok": true,
+        "path": [
+          "FRA",
+          "B17",
+          "GW-1",
+          "SVC-1"
+        ],
+        "latencyMs": 6.9,
+        "detail": "HTTP 200 in 6.9 ms via real lab path (p3 → b17 → gw1 → svc1)"
+      },
+      {
+        "id": "NEG-1",
+        "kind": "negative",
+        "label": "Untrusted edge → admin port stays blocked",
+        "ok": true,
+        "path": [
+          "FRA",
+          "B17"
+        ],
+        "detail": "no route from 10.23.0.1 (EDGE-IN seq 10) — connection failed as required"
+      },
+      {
+        "id": "NEG-2",
+        "kind": "negative",
+        "label": "Clients reject an expired test certificate",
+        "ok": true,
+        "path": [
+          "FRA",
+          "GW-1"
+        ],
+        "detail": "handshake refused as expected (curl exit 60)"
+      },
+      {
+        "id": "CTRL-1",
+        "kind": "control",
+        "label": "Positive control: admin service exists for trusted operators",
+        "ok": true,
+        "path": [
+          "B17"
+        ],
+        "detail": "reachable from the trusted management side (b17)"
+      }
+    ],
+    "coverage": {
+      "schemaVersion": "coverage-1",
+      "adequate": true,
+      "missingCritical": [],
+      "affectedJourneys": [
+        "J1",
+        "J3"
+      ],
+      "testedJourneys": [
+        "J1",
+        "J3",
+        "J4"
+      ],
+      "representedNodes": [
+        "BER",
+        "HAM",
+        "FRA",
+        "B17",
+        "DNS-1",
+        "GW-1",
+        "SVC-1"
+      ],
+      "totalNodes": 8,
+      "capabilities": [
+        "IPv4 routing",
+        "DNS",
+        "TLS",
+        "IPv6 parity"
+      ],
+      "limitations": [
+        "Physical layer and vendor hardware are not represented",
+        "Convergence and long-lived sessions need separate measurements"
+      ]
+    }
+  },
+  "writesDuringDiagnosis": 0,
+  "technicalGates": [
+    {
+      "id": "G1",
+      "status": "pass",
+      "reason": "10/10 symptoms reproduced in twin"
+    },
+    {
+      "id": "G2",
+      "status": "pass",
+      "reason": "every affected journey succeeds in the twin"
+    },
+    {
+      "id": "G3",
+      "status": "pass",
+      "reason": "unaffected journeys, negative tests and positive control unchanged"
+    },
+    {
+      "id": "G4",
+      "status": "pass",
+      "reason": "survived 4 challenges"
+    },
+    {
+      "id": "G5",
+      "status": "pass",
+      "reason": "allowed action · blast radius 1 node"
+    },
+    {
+      "id": "G6",
+      "status": "pass",
+      "reason": "rollback rehearsed in twin — state hash restored"
+    },
+    {
+      "id": "G7",
+      "status": "pass",
+      "reason": "within latency budget, no session impact"
+    },
+    {
+      "id": "G8",
+      "status": "pending",
+      "reason": "requires a human approval bound to this change hash"
+    }
+  ],
   "candidates": [
     {
       "id": "cand-A",
-      "origin": "llm",
       "label": "A · Remove the problematic prefix-list entry",
+      "origin": "llm",
       "decision": "pass",
-      "restored": true,
-      "failedGateIds": []
+      "gates": [
+        {
+          "id": "G1",
+          "status": "pass",
+          "reason": "10/10 symptoms reproduced in twin"
+        },
+        {
+          "id": "G2",
+          "status": "pass",
+          "reason": "every affected journey succeeds in the twin"
+        },
+        {
+          "id": "G3",
+          "status": "pass",
+          "reason": "unaffected journeys, negative tests and positive control unchanged"
+        },
+        {
+          "id": "G4",
+          "status": "pass",
+          "reason": "survived 4 challenges"
+        },
+        {
+          "id": "G5",
+          "status": "pass",
+          "reason": "allowed action · blast radius 1 node"
+        },
+        {
+          "id": "G6",
+          "status": "pass",
+          "reason": "rollback rehearsed in twin — state hash restored"
+        },
+        {
+          "id": "G7",
+          "status": "pass",
+          "reason": "within latency budget, no session impact"
+        },
+        {
+          "id": "G8",
+          "status": "pending",
+          "reason": "requires a human approval bound to this change hash"
+        }
+      ]
     },
     {
       "id": "cand-B",
-      "origin": "llm",
       "label": "B · Rollback B17 configuration to r-2041",
+      "origin": "llm",
       "decision": "superseded",
-      "restored": true,
-      "failedGateIds": [
-        "G4"
+      "gates": [
+        {
+          "id": "G1",
+          "status": "pass",
+          "reason": "10/10 symptoms reproduced in twin"
+        },
+        {
+          "id": "G2",
+          "status": "pass",
+          "reason": "every affected journey succeeds in the twin"
+        },
+        {
+          "id": "G3",
+          "status": "pass",
+          "reason": "unaffected journeys, negative tests and positive control unchanged"
+        },
+        {
+          "id": "G4",
+          "status": "fail",
+          "reason": "IPv6 / dual-stack parity: HAM IPv6 → svc.demo: no return path for 2001:db8:21::1 — TCP timeout (curl exit 28)"
+        },
+        {
+          "id": "G5",
+          "status": "pass",
+          "reason": "allowed action · blast radius 1 node"
+        },
+        {
+          "id": "G6",
+          "status": "pass",
+          "reason": "rollback rehearsed in twin — state hash restored"
+        },
+        {
+          "id": "G7",
+          "status": "pass",
+          "reason": "within latency budget, no session impact"
+        },
+        {
+          "id": "G8",
+          "status": "pending",
+          "reason": "requires a human approval bound to this change hash"
+        }
       ]
     },
     {
       "id": "cand-B2",
+      "label": "B′ · B · Rollback B17 configuration to r-2041 and re-add IPv6 prefix",
       "origin": "revision",
-      "label": "B′ · Remove EDGE-IN seq 30 only",
-      "decision": "pass",
-      "restored": true,
-      "failedGateIds": []
+      "decision": "superseded",
+      "gates": [
+        {
+          "id": "G1",
+          "status": "pass",
+          "reason": "10/10 symptoms reproduced in twin"
+        },
+        {
+          "id": "G2",
+          "status": "fail",
+          "reason": "J1, J3 still failing: no answer resolving svc.demo (dig timeout/SERVFAIL)"
+        },
+        {
+          "id": "G3",
+          "status": "fail",
+          "reason": "J4 no answer resolving api.demo (dig timeout/SERVFAIL); NEG-2 expired test certificate was ACCEPTED (curl exit 7) curl: (7) Failed to connect to expired.demo port 9443 after ; NEG-3 svc.demo: 10.40.0.10 → no answer; api.demo: 10.40.0.11 → no answer"
+        },
+        {
+          "id": "G4",
+          "status": "skip",
+          "reason": "not attacked — an earlier gate already failed"
+        },
+        {
+          "id": "G5",
+          "status": "pass",
+          "reason": "allowed action · blast radius 1 node"
+        },
+        {
+          "id": "G6",
+          "status": "pass",
+          "reason": "rollback rehearsed in twin — state hash restored"
+        },
+        {
+          "id": "G7",
+          "status": "pass",
+          "reason": "within latency budget, no session impact"
+        },
+        {
+          "id": "G8",
+          "status": "pending",
+          "reason": "requires a human approval bound to this change hash"
+        }
+      ]
+    },
+    {
+      "id": "cand-B22",
+      "label": "B′′ · Rollback B17 configuration to r-2041, flush DNS cache, and renew gatew",
+      "origin": "revision",
+      "decision": "rejected",
+      "gates": [
+        {
+          "id": "G1",
+          "status": "pass",
+          "reason": "10/10 symptoms reproduced in twin"
+        },
+        {
+          "id": "G2",
+          "status": "pass",
+          "reason": "every affected journey succeeds in the twin"
+        },
+        {
+          "id": "G3",
+          "status": "pass",
+          "reason": "unaffected journeys, negative tests and positive control unchanged"
+        },
+        {
+          "id": "G4",
+          "status": "fail",
+          "reason": "IPv6 / dual-stack parity: HAM IPv6 → svc.demo: no return path for 2001:db8:21::1 — TCP timeout (curl exit 28)"
+        },
+        {
+          "id": "G5",
+          "status": "fail",
+          "reason": "blast radius 3 nodes exceeds 2"
+        },
+        {
+          "id": "G6",
+          "status": "pass",
+          "reason": "rollback rehearsed in twin — state hash restored"
+        },
+        {
+          "id": "G7",
+          "status": "warn",
+          "reason": "Session continuity: graceful reload drains long-lived sessions (clients re-handshake)"
+        },
+        {
+          "id": "G8",
+          "status": "pending",
+          "reason": "requires a human approval bound to this change hash"
+        }
+      ]
     },
     {
       "id": "cand-C",
+      "label": "C · Restart BGP service on B17",
       "origin": "llm",
-      "label": "C · Restart routing service on B17",
-      "decision": "superseded",
-      "restored": false,
-      "failedGateIds": [
-        "G2",
-        "G3"
-      ]
-    },
-    {
-      "id": "cand-C2",
-      "origin": "revision",
-      "label": "C′ · C · Restart routing service on B17, flush DNS cache, and renew certifi",
       "decision": "rejected",
-      "restored": false,
-      "failedGateIds": [
-        "G2",
-        "G3",
-        "G5"
+      "gates": [
+        {
+          "id": "G1",
+          "status": "pass",
+          "reason": "10/10 symptoms reproduced in twin"
+        },
+        {
+          "id": "G2",
+          "status": "fail",
+          "reason": "J1, J3 still failing: no answer resolving svc.demo (dig timeout/SERVFAIL)"
+        },
+        {
+          "id": "G3",
+          "status": "fail",
+          "reason": "J4 no answer resolving api.demo (dig timeout/SERVFAIL); NEG-2 expired test certificate was ACCEPTED (curl exit 7) curl: (7) Failed to connect to expired.demo port 9443 after ; NEG-3 svc.demo: 10.40.0.10 → no answer; api.demo: 10.40.0.11 → no answer"
+        },
+        {
+          "id": "G4",
+          "status": "skip",
+          "reason": "not attacked — an earlier gate already failed"
+        },
+        {
+          "id": "G5",
+          "status": "pass",
+          "reason": "allowed action · blast radius 1 node"
+        },
+        {
+          "id": "G6",
+          "status": "fail",
+          "reason": "rollback did not restore the captured state"
+        },
+        {
+          "id": "G7",
+          "status": "pass",
+          "reason": "within latency budget, no session impact"
+        },
+        {
+          "id": "G8",
+          "status": "pending",
+          "reason": "requires a human approval bound to this change hash"
+        }
       ]
     }
   ],
-  "reproduction": {
-    "matched": 10,
-    "total": 10,
-    "passed": true
+  "approvalActor": "Browser automation under explicit owner instruction; private credential entry omitted.",
+  "outcome": {
+    "status": "applied",
+    "reason": "post-change checks passed across 3 observation window(s)",
+    "windows": [
+      {
+        "sample": 1,
+        "observedAt": "2026-10-15T18:15:27.522642+00:00",
+        "passed": 11,
+        "total": 11
+      },
+      {
+        "sample": 2,
+        "observedAt": "2026-10-15T18:15:30.533173+00:00",
+        "passed": 11,
+        "total": 11
+      },
+      {
+        "sample": 3,
+        "observedAt": "2026-10-15T18:15:33.466186+00:00",
+        "passed": 11,
+        "total": 11
+      }
+    ]
   },
-  "writesDuringDiagnosis": 0,
-  "approval": {
-    "decision": "approve",
-    "operator": "owner-authorized-showcase",
-    "candidateId": "cand-A",
-    "changeHash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba",
-    "targetStateHash": "84349bb43c0aa145becc5c265b30fdb2318d22749e6f6517ba58973a6ba941e2",
-    "matchesTestedChangeAndState": true,
-    "credentialRedacted": true
-  },
-  "postCheckWindows": [
+  "metro": [
     {
-      "sample": 1,
-      "observedAt": "2026-10-15T09:35:02.538133+00:00",
-      "passed": 11,
-      "total": 11,
-      "ids": [
-        "J1",
-        "J2",
-        "J3",
-        "J4",
-        "NEG-1",
-        "NEG-2",
-        "CTRL-1",
-        "J1-v6",
-        "J2-v6",
-        "J3-v6",
-        "J4-v6"
-      ]
+      "id": "J1",
+      "ok": true
     },
     {
-      "sample": 2,
-      "observedAt": "2026-10-15T09:35:05.609993+00:00",
-      "passed": 11,
-      "total": 11,
-      "ids": [
-        "J1",
-        "J2",
-        "J3",
-        "J4",
-        "NEG-1",
-        "NEG-2",
-        "CTRL-1",
-        "J1-v6",
-        "J2-v6",
-        "J3-v6",
-        "J4-v6"
-      ]
+      "id": "J2",
+      "ok": true
     },
     {
-      "sample": 3,
-      "observedAt": "2026-10-15T09:35:08.611745+00:00",
-      "passed": 11,
-      "total": 11,
-      "ids": [
-        "J1",
-        "J2",
-        "J3",
-        "J4",
-        "NEG-1",
-        "NEG-2",
-        "CTRL-1",
-        "J1-v6",
-        "J2-v6",
-        "J3-v6",
-        "J4-v6"
-      ]
+      "id": "J3",
+      "ok": true
+    },
+    {
+      "id": "J4",
+      "ok": true
+    },
+    {
+      "id": "NEG-1",
+      "ok": true
+    },
+    {
+      "id": "NEG-2",
+      "ok": true
+    },
+    {
+      "id": "CTRL-1",
+      "ok": true
     }
   ],
-  "finalPostChecks": {
-    "passed": 11,
-    "total": 11,
-    "ids": [
-      "J1",
-      "J2",
-      "J3",
-      "J4",
-      "NEG-1",
-      "NEG-2",
-      "CTRL-1",
-      "J1-v6",
-      "J2-v6",
-      "J3-v6",
-      "J4-v6"
-    ]
-  },
-  "recoveredJourneys": {
-    "passed": 4,
-    "total": 4,
-    "ids": [
-      "J1",
-      "J2",
-      "J3",
-      "J4"
-    ]
-  },
-  "guardrails": {
-    "passed": 3,
-    "total": 3,
-    "ids": [
-      "NEG-1",
-      "NEG-2",
-      "CTRL-1"
-    ]
-  },
-  "metroIssueStatus": "resolved",
-  "metroCheckedAt": 1792056947.607114,
-  "verdict": "PASS_UNDER_DEFINED_TESTS",
-  "computeMs": 51927.3,
-  "untestedConditions": [
+  "untested": [
     "Behaviour beyond the emulated lab images (FRR, CoreDNS, nginx on Linux containers) — not production vendor hardware.",
     "Routing convergence timing and transient packet loss during the change.",
     "Production traffic volume and long-lived session continuity; the lab tests tripled probe concurrency and derives session impact from configuration.",
@@ -427,13 +502,103 @@
     "Physical layer: optics, CRC errors and link flaps are outside twin fidelity.",
     "Journeys from MUC were outside the twin slice and not individually tested."
   ],
+  "modelExecution": {
+    "actualCalls": 10,
+    "fallbackCalls": 0,
+    "discardedItems": 0,
+    "roles": [
+      {
+        "role": "diagnose",
+        "latencyMs": 3250,
+        "fallback": false
+      },
+      {
+        "role": "diagnose",
+        "latencyMs": 2834,
+        "fallback": false
+      },
+      {
+        "role": "diagnose",
+        "latencyMs": 3054,
+        "fallback": false
+      },
+      {
+        "role": "propose",
+        "latencyMs": 2793,
+        "fallback": false
+      },
+      {
+        "role": "challenge",
+        "latencyMs": 1009,
+        "fallback": false
+      },
+      {
+        "role": "challenge",
+        "latencyMs": 829,
+        "fallback": false
+      },
+      {
+        "role": "revise",
+        "latencyMs": 1683,
+        "fallback": false
+      },
+      {
+        "role": "revise",
+        "latencyMs": 1814,
+        "fallback": false
+      },
+      {
+        "role": "challenge",
+        "latencyMs": 1333,
+        "fallback": false
+      },
+      {
+        "role": "narrate",
+        "latencyMs": 1288,
+        "fallback": false
+      }
+    ],
+    "eventCount": 65,
+    "lastKind": "post_check"
+  },
+  "lastCounters": {
+    "experiments": 5,
+    "revisions": 2,
+    "unsafeRejected": 2,
+    "probesRun": 79,
+    "challengesRun": 13,
+    "productionWritesDuringDiagnosis": 0
+  },
+  "approval": {
+    "schemaVersion": "approval-1",
+    "runId": "inc-net-ed770f19223844eda01c182b59901c35",
+    "candidateId": "cand-A",
+    "changeHash": "ebbae1bc6aa9541161a311eac0588ad0b69efaa50623f0e628882bc0cb8540ba",
+    "targetStateHash": "03366c9e34a781776b05326b9cf408cf9c5c79860ed0e0563d75bce73f16f16a",
+    "operator": "owner-authorized-showcase",
+    "decision": "approve",
+    "decidedAt": "2026-10-15T18:15:22.156990Z"
+  },
+  "video": {
+    "duration": 178,
+    "actualAppFootageSeconds": 159,
+    "nativeCapture": [
+      3840,
+      2160
+    ],
+    "scope": "Actual deployed lab session; time condensed. Illustrations only in opening and closing.",
+    "publicUrl": "https://youtu.be/wyze5IWUEC0"
+  },
+  "sanitizedEvidenceSha256": "86b6278e4d87e31696731d465edb426bdb35761ebe5ea35edf723c76700d1ef8",
   "editorialNotes": [
-    "Selected A is directly model-proposed; the investigation is not fallback-free.",
-    "Archived rollback B restored initial journeys but failed the HAM IPv6 challenge.",
-    "B2 is the runbook revision after a model revision failed schema validation.",
-    "Session-continuity challenge is model-derived; surge means tripled probe concurrency, not production traffic.",
+    "This record corresponds to the current 2:58 video and replaces the earlier recorded rehearsal; Git history retains that prior public record.",
+    "Ten actual model calls completed with no fallback in this recorded run; this is not a guarantee for other investigations.",
+    "The broad rollback B restored the original journeys but failed the additional Hamburg IPv6 challenge.",
+    "G8 remains pending in immutable preapproval candidate gates; the separate approval and applied outcome record the completed decision.",
+    "Approval was performed by browser automation under explicit owner instruction. Credentials, full approval tokens and signing material are omitted.",
+    "Session-continuity results are model-derived; tripled probe concurrency does not model production traffic volume.",
     "Topology and customer counts are synthetic; the lab uses real FRR/CoreDNS/nginx protocol services.",
-    "G8 remains pending in immutable preapproval candidate gates; the separate approval and applied outcome prove the completed decision.",
-    "This is one successful rehearsal and is not a production reliability or productivity measurement."
+    "Waiting and review time are shortened in the video. Its duration is not a repair-time benchmark.",
+    "This is one protocol-lab rehearsal, not a production reliability or productivity measurement."
   ]
 }

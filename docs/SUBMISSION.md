@@ -2,7 +2,7 @@
 
 **Project:** TwinOps  
 **Theme:** Future of Work & Enterprise Productivity  
-**Prepared:** 15 October 2026  
+**Prepared:** 16 October 2026\
 **Tagline:** AI that tests and challenges a fix before a human approves it.
 
 ## What I Built
@@ -20,7 +20,7 @@ The idea is simple: an AI can be wrong while exploring a repair, but its proposa
 | Product overview | [TwinOps overview](https://twinops-live-705406130795.europe-west1.run.app/) |
 | Presentation | [PDF deck](TwinOps_Deck.pdf) and [interactive deck](https://twinops-live-705406130795.europe-west1.run.app/deck) |
 | Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - owner will make public as a final step |
-| Public demo video | [Watch TwinOps on YouTube](https://youtu.be/7edjKnZXiJA) — 2:50 recorded repair showcase |
+| Public demo video | [Watch TwinOps on YouTube](https://youtu.be/wyze5IWUEC0) — 2:58 end-to-end walkthrough of the deployed application |
 | Judge instructions | [Judge guide](JUDGE_GUIDE.md) |
 
 Competition references: [published requirements](https://aibuildercup.com/themes.html) and [submission FAQ](https://aibuildercup.com/Faqs.html).
@@ -38,7 +38,7 @@ Competition references: [published requirements](https://aibuildercup.com/themes
 5. Have the authorized host approve the exact tested change, then compare fresh recovery probes in both apps and export the Proof Pack.
 6. After the exercise finishes, check that the unsupported link-flap case stops or escalates without guessing a repair.
 
-Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/7edjKnZXiJA) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
+Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/wyze5IWUEC0) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
 
 ## Why This Problem Matters
 
@@ -67,7 +67,7 @@ The hosted configuration selects **Gemini 2.5 Flash through Vertex AI**, accesse
 
 The model cannot run a shell command, alter the tests, calculate its own authoritative verdict or approve its own action. Structured output is checked against schemas and an allow-listed action catalogue. Instruction-like text in device logs is treated as untrusted data. Fixed policy checks and mandatory challenges remain in code.
 
-AI trace records distinguish model requests, rejected output and runbook fallbacks. The [recorded hosted repair](evidence/recorded-demo.json) retains ten actual Vertex/Gemini calls, one schema-validation fallback and two discarded validation items. The selected repair was directly model-proposed. A controlled model-versus-runbook benchmark remains separate work. The overview's animations and browser evaluation intentionally use the deterministic engine.
+AI trace records distinguish model requests, rejected output and runbook fallbacks. The [recorded hosted repair](evidence/recorded-demo.json) retains ten actual Vertex/Gemini calls, zero fallbacks and zero discarded validation items. The selected repair was directly model-proposed. A controlled model-versus-runbook benchmark remains separate work. The overview's animations and browser evaluation intentionally use the deterministic engine.
 
 ## Architecture
 
@@ -111,7 +111,7 @@ These are retrospective implementation notes, not a verbatim prompt transcript. 
 
 | Evidence | Established result | Scope |
 |---|---|---|
-| [Recorded hosted repair](evidence/recorded-demo.json), 15 Oct 2026 | Ten actual Vertex/Gemini calls, one fallback, zero diagnosis writes; approved repair applied; eleven checks passed in each of three recovery windows; four journeys and three controls healthy afterward | One recorded protocol-lab routing rehearsal; not a production reliability or productivity study |
+| [Recorded hosted repair](evidence/recorded-demo.json), 15 Oct 2026 | Ten actual Vertex/Gemini calls, zero fallbacks, zero diagnosis writes; approved repair applied; eleven checks passed in each of three recovery windows; four journeys and three controls healthy afterward | One recorded protocol-lab routing rehearsal; not a production reliability or productivity study |
 | [Foundation evaluation](evidence/foundation-evaluation.json), 13 Oct 2026 | 320 synthetic cases: 200 verified repairs, 120 abstentions, zero unsafe passes; 13/13 controls passed | Deterministic runbook and model twin; zero model calls; exercised implementation seeds |
 | Operator productivity | Human review trials pending | No measured MTTR reduction, time savings or production ROI claimed |
 
@@ -141,6 +141,6 @@ The next delivery steps are an exploratory operator study and a read-only shadow
 
 ## Final Submission Handoff
 
-Watch the [2:50 demo on YouTube](https://youtu.be/7edjKnZXiJA), then follow the [judge guide](JUDGE_GUIDE.md) to inspect the prototype. The video covers a recorded supported Gemini repair, including the failed alternative, exact-change approval and measured recovery; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately. Before submitting, make the repository public, verify the video and all submitted links while signed out, add the YouTube URL to the portal, and update the PDF if new evidence is added.
+Watch the [2:58 demo on YouTube](https://youtu.be/wyze5IWUEC0), then follow the [judge guide](JUDGE_GUIDE.md) to inspect the prototype. The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately. Before submitting, make the repository public, verify the video and all submitted links while signed out, add the YouTube URL to the portal, and update the PDF if new evidence is added.
 
 Use the linked video, source repository and PDF deck in the registered competition dashboard, and confirm the exact team details and theme before submitting.

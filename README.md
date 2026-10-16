@@ -6,7 +6,7 @@ Google Cloud AI Builder Cup 2026 · **Future of Work & Enterprise Productivity**
 
 TwinOps helps network engineers and change approvers turn scattered incident evidence into a tested repair and a reviewable Proof Pack. The hosted prototype combines Gemini through Vertex AI, an isolated protocol lab, deterministic verification and human approval.
 
-**[Watch the 2:50 demo on YouTube](https://youtu.be/7edjKnZXiJA)** — follow a recorded Metro routing fault through Gemini investigation, isolated twin tests, approval and measured recovery.
+**[Watch the 2:58 demo on YouTube](https://youtu.be/wyze5IWUEC0)** — follow one real run in the deployed app: introduce a routing fault, watch Gemini investigate, compare twin-tested repairs, review the exact diff, approve, verify recovery and download the Proof Pack. Waiting time is shortened.
 
 ## Live prototype
 
@@ -17,11 +17,11 @@ TwinOps helps network engineers and change approvers turn scattered incident evi
 | [Product overview](https://twinops-live-705406130795.europe-west1.run.app/) | Problem, workflow and deterministic browser demonstration |
 | [Interactive pitch deck](https://twinops-live-705406130795.europe-west1.run.app/deck) | Ten-slide presentation |
 | [PDF pitch deck](docs/TwinOps_Deck.pdf) | Submission attachment |
-| [Demo video on YouTube](https://youtu.be/7edjKnZXiJA) | 2:50 showcase of the recorded repair workflow |
+| [Demo video on YouTube](https://youtu.be/wyze5IWUEC0) | 2:58 end-to-end walkthrough of the deployed application |
 
 Deployment and lab readiness were checked on **15 October 2026**: both apps loaded, Metro's four customer journeys were healthy, and the isolated lab reported ready. The hosted service reported **Vertex AI / Gemini 2.5 Flash** as its configured planner. Configuration and readiness do not establish a completed Gemini repair; model-call, fallback, approval and recovery evidence must be inspected in a saved investigation.
 
-The [recorded repair evidence](docs/evidence/recorded-demo.json) retains the subsequent hosted demonstration: ten actual Gemini calls, one schema fallback, a selected model-proposed repair, owner-authorized approval and eleven passing checks in each of three recovery windows.
+The [recorded repair evidence](docs/evidence/recorded-demo.json) retains the run shown in this video: ten actual Gemini calls, zero fallbacks, a selected model-proposed repair, owner-authorized approval and eleven passing checks in each of three recovery windows.
 
 The demo runs one shared lab. Coordinate a session with the project host before injecting a fault; approval and rejection require the host's operator passcode. Keep that credential out of the repository. History is local to the Cloud Run instance and can disappear when the instance is replaced.
 

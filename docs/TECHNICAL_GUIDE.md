@@ -123,7 +123,7 @@ SQLite journals evidence before events are published. A Proof Pack includes obse
 
 Two public records retain the verification scope:
 
-- [Hosted recorded demo](evidence/recorded-demo.json): ten actual Vertex/Gemini calls, one schema fallback, zero diagnosis writes, a model-proposed selected change, owner-authorized approval and eleven passing checks in each of three post-change windows.
+- [Hosted recorded demo](evidence/recorded-demo.json): ten actual Vertex/Gemini calls, zero fallbacks, zero diagnosis writes, a model-proposed selected change, owner-authorized approval and eleven passing checks in each of three post-change windows.
 - [Foundation evaluation](evidence/foundation-evaluation.json): 320 deterministic model cases with 200 repairs, 120 expected abstentions and zero unsafe passes. These are separate runbook/model results with zero model calls.
 
 ## Limits and next work
