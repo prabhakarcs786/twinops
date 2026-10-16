@@ -1,11 +1,18 @@
 # TwinOps: AI that tests its fix before you approve it
 
 **Project:** TwinOps  
+**Team:** HackSmith\
+**Leader:** Prabhakar Srivastava\
+**Member:** Shivam Anand\
 **Theme:** Future of Work & Enterprise Productivity  
 **Prepared:** 16 October 2026\
 **Tagline:** AI that tests and challenges a fix before a human approves it.
 
-## What I Built
+## Brief Description for the Submission Portal
+
+TwinOps helps network engineers investigate incidents and verify repairs before approving changes. Deployed on Google Cloud Run, it uses Gemini 2.5 Flash through Vertex AI to propose diagnoses and candidate repairs. An isolated digital twin tests these repairs against real network protocols, while adversarial checks identify regressions. Human approval binds the selected change to its tested evidence, followed by application and fresh recovery checks. The prototype uses synthetic network scenarios. Evidence storage currently uses SQLite; Firebase and Firestore are not used.
+
+## What We Built
 
 TwinOps helps network engineers investigate incidents and review repairs with evidence. It reads service symptoms and configuration, reproduces the affected network slice in an isolated digital twin, and tests competing fixes. A challenge stage checks the strongest proposal for regressions such as exposed management access, broken IPv6 routes or stale DNS caches. Deterministic gates evaluate the results. A human reviews a Proof Pack and approves the exact tested change before the apply gateway can modify the application lab. The prototype is deployed on Google Cloud Run, with Gemini 2.5 Flash configured through Vertex AI and real FRR, CoreDNS and nginx protocol networks.
 
@@ -18,8 +25,8 @@ The idea is simple: an AI can be wrong while exploring a repair, but its proposa
 | Deployed prototype | [TwinOps workbench](https://twinops-live-705406130795.europe-west1.run.app/workbench) |
 | Connected application | [Metro Network](https://twinops-live-705406130795.europe-west1.run.app/metro/) |
 | Product overview | [TwinOps overview](https://twinops-live-705406130795.europe-west1.run.app/) |
-| Presentation | [PDF deck](TwinOps_Deck.pdf) and [interactive deck](https://twinops-live-705406130795.europe-west1.run.app/deck) |
-| Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - owner will make public as a final step |
+| Presentation | [Official-template PDF deck](TwinOps_Deck.pdf) and [editable PowerPoint](TwinOps_Deck.pptx); the [interactive overview](https://twinops-live-705406130795.europe-west1.run.app/deck) is a separate product presentation |
+| Source repository | [TwinOps on GitHub](https://github.com/prabhakarcs786/twinops) - public |
 | Public demo video | [Watch TwinOps on YouTube](https://youtu.be/wyze5IWUEC0) — 2:58 end-to-end walkthrough of the deployed application |
 | Judge instructions | [Judge guide](JUDGE_GUIDE.md) |
 
@@ -61,9 +68,11 @@ TwinOps serves network operations engineers, SREs and change approvers. Its ente
 
 The application lab and twin are separate. Every scenario uses synthetic topology and incidents; the lab has no access to a carrier production network or real customer data.
 
-## How I Used Google Cloud and Gemini
+## How We Used Google Cloud and Gemini
 
 The hosted configuration selects **Gemini 2.5 Flash through Vertex AI**, accessed using the Google Gen AI SDK and service-account credentials. The planner integration supports evidence-citing hypotheses, catalogue-based repair proposals, additional challenge selection, revisions based on failed probes, approver briefings and questions about an investigation.
+
+**Cloud Run** hosts the prototype. **Firebase and Firestore are not used**; SQLite journals evidence on the instance's local disk. The project owner confirmed on 16 October 2026 that the competition accepts the Cloud Run deployment path without requiring Firebase or Firestore.
 
 The model cannot run a shell command, alter the tests, calculate its own authoritative verdict or approve its own action. Structured output is checked against schemas and an allow-listed action catalogue. Instruction-like text in device logs is treated as untrusted data. Fixed policy checks and mandatory challenges remain in code.
 
@@ -73,7 +82,7 @@ AI trace records distinguish model requests, rejected output and runbook fallbac
 
 ![TwinOps architecture showing Cloud Run, configured Vertex AI and Gemini, the isolated protocol lab, Proof Gate and approval gateway](images/cloud-run-architecture.png)
 
-*Architecture slide from the updated submission deck, rendered on 15 October 2026. It describes the implementation; the deployment and execution evidence is scoped below.*
+*Architecture illustration from the interactive product overview, rendered on 15 October 2026. The official-template submission deck contains an editable architecture diagram. Deployment and execution evidence is scoped below.*
 
 | Component | Responsibility |
 |---|---|
@@ -95,7 +104,7 @@ TwinOps makes a proposal contestable before it can become a change. It compares 
 
 The key distinction is the combination of bounded generative reasoning, real protocol experiments, deterministic evidence gates and approval tied to exact content and state. A verdict communicates what was tested and what remains uncertain rather than guaranteeing safety in every possible environment.
 
-## My Build Process
+## Our Build Process
 
 The implementation grew from a deterministic incident engine into a connected, cloud-hosted workflow. The retained Git history records backend and AI integration on 9 October, the separate Metro application on 12 October, interface improvements on 13-14 October and deployment work on 15 October.
 
@@ -123,7 +132,7 @@ For an on-call engineer, the intended value is a reproduced incident and tested 
 
 The existing review-trial workflow compares raw observations with a Proof Pack for the same incident/candidate task. It can record review duration and agreement with the recorded gate using pseudonymous, counterbalanced assignments. A pilot should measure review time, diagnostic effort, repair verification, escalations and rollback outcomes against a baseline. These are proposed measurements; production productivity and safety benefits have not yet been demonstrated.
 
-## What I Learned
+## What We Learned
 
 Restoring a symptom is only one part of a repair. A change also has to preserve unrelated service, security boundaries and state that was not included in an old configuration archive. Keeping failed candidates and challenge results makes that distinction visible to an approver.
 
@@ -141,6 +150,10 @@ The next delivery steps are an exploratory operator study and a read-only shadow
 
 ## Final Submission Handoff
 
-Watch the [2:58 demo on YouTube](https://youtu.be/wyze5IWUEC0), then follow the [judge guide](JUDGE_GUIDE.md) to inspect the prototype. The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately. Before submitting, make the repository public, verify the video and all submitted links while signed out, add the YouTube URL to the portal, and update the PDF if new evidence is added.
+The project owner confirmed the **three-minute video requirement** on 16 October 2026. A 3:00 edit preserves the same recorded workflow and adds two seconds to the closing card. The [currently uploaded video](https://youtu.be/wyze5IWUEC0) is still 2:58; upload the 3:00 version and replace its link here, in the README, judge guide, documentation index, recorded-demo metadata and both deck formats before submitting. Do not describe the existing YouTube upload as the three-minute edit.
 
-Use the linked video, source repository and PDF deck in the registered competition dashboard, and confirm the exact team details and theme before submitting.
+The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately.
+
+Use the **official-template PDF** as the pitch-deck attachment. It covers team details, the idea, opportunities, implemented features, process flow, interface, architecture, technology, prototype snapshots, benchmarking, future development and public links. The organizer's download-instruction slide, empty spare slide and optional cost-estimate slide are omitted. The editable PowerPoint is retained alongside the PDF.
+
+The repository is already public. Before final submission, verify the new video and all submitted links while signed out, wait for Metro and the twin to report ready, and enter the public repository, final video and workbench URLs in the HackSmith competition entry. Keep the Cloud Run deployment, Vertex AI access and billing active through evaluation. The shared lab can scale to zero; the [judge guide](JUDGE_GUIDE.md#open-the-prototype) explains startup readiness and private approval access.

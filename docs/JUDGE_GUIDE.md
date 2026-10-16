@@ -13,12 +13,14 @@ The [sanitized run record](evidence/recorded-demo.json) preserves model-call pro
 - [PDF pitch deck](TwinOps_Deck.pdf)
 - [Submission overview](SUBMISSION.md)
 
-The service can scale to zero, so wait for lab readiness after a cold start. Both applications share one lab across visitors. Coordinate a session with the project host before introducing a fault. The host provides approval access privately or performs that step during a guided session; the operator passcode is not published.
+The service can scale to zero. During startup the workbench can load while Metro temporarily returns 503. Wait and refresh Metro; proceed only when the [Metro health endpoint](https://twinops-live-705406130795.europe-west1.run.app/metro/api/health) reports `ready: true` and the workbench shows a connected application with current measurements. API health alone is insufficient. If Metro remains unavailable after a few minutes, contact the project host before attempting an exercise.
+
+Both applications share one lab across visitors. Coordinate a session with the project host before introducing a fault. The host provides approval access privately or performs that step during a guided session; the operator passcode is not published.
 
 ## Inspect without changing the lab
 
 1. Open Metro. Check the last measurement time, customer journeys and safety guardrails. Healthy status means four measured journeys currently succeed; displayed customer counts are simulated.
-2. Open the workbench. Confirm **Live backend**, a connected Metro Network and current measurements. **Runtime details** identifies the planner and twin. The deployment reviewed on 15 October 2026 reported Vertex AI / Gemini 2.5 Flash and an emulated Linux namespace lab.
+2. Open the workbench. Confirm **Live backend**, a connected Metro Network and current measurements. **Runtime details** identifies the planner and twin. The deployment reviewed on 16 October 2026 reported Vertex AI / Gemini 2.5 Flash, a ready Linux namespace lab and four healthy measured journeys.
 3. The [health endpoint](https://twinops-live-705406130795.europe-west1.run.app/api/health) reports API health. The [configuration endpoint](https://twinops-live-705406130795.europe-west1.run.app/api/config) reports configured planner and twin readiness; it does not establish a successful model invocation.
 4. Open **Recent incidents** if saved investigations exist. Saved evidence is read-only after restart and may disappear when the Cloud Run instance is replaced. The overview's animations and browser evaluation are deterministic examples.
 
@@ -35,7 +37,7 @@ The service can scale to zero, so wait for lab readiness after a cold start. Bot
 | 7 | Wait for the outcome and revisit Metro | Fresh post-checks establish recovery while the negative controls remain intact |
 | 8 | Download the Proof Pack | Incident/model provenance, selected and rejected changes, gate reasons, approval and outcome |
 
-Candidate identities and behavior depend on the collected evidence and planner. An escalation or visible fallback is a valid observed result; do not relabel it as a successful Gemini repair. Historical runbook timings in the deck are not a timing promise for this hosted session.
+Candidate identities and behavior depend on the collected evidence and planner. An escalation or visible fallback is a valid observed result; do not relabel it as a successful Gemini repair. The recorded video shortens waiting and review time; its duration is not a repair-time benchmark or a timing promise for this hosted session.
 
 ## Check an unsupported fault
 

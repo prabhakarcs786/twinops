@@ -53,3 +53,6 @@ frontend/.playwright-data/
 # Final run evidence is retained separately in docs/evidence/.
 # Historical production files are archived under the ignored .local/ directory.
 /docs/video/
+
+# Keep the blank organizer template local; publish only the completed deck.
+/docs/Submission Template _ AI Builder Cup.pptx

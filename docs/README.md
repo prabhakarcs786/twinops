@@ -7,7 +7,8 @@ Start with the [project README](../README.md) for the problem, live applications
 | [Technical guide](TECHNICAL_GUIDE.md) | Architecture, investigation flow, approval boundary, run modes and limitations |
 | [Demo walkthrough](JUDGE_GUIDE.md) | Inspect the hosted prototype and follow a controlled repair with the host |
 | [Submission overview](SUBMISSION.md) | Problem, Google AI integration, implementation, evidence and intended impact |
-| [PDF pitch deck](TwinOps_Deck.pdf) | Concise presentation of the project |
+| [PDF submission deck](TwinOps_Deck.pdf) | Completed official competition template, including team, workflow, architecture, screenshots and evidence |
+| [Editable submission deck](TwinOps_Deck.pptx) | PowerPoint source of the submission PDF |
 
 ## Evidence
 
