@@ -14,6 +14,8 @@ import subprocess
 import sys
 import time
 
+from .config import _bool
+
 
 def main() -> int:
     public = os.environ["TWINOPS_PUBLIC_URL"].rstrip("/")
@@ -25,18 +27,23 @@ def main() -> int:
         "TWINOPS_HARNESS": "false",
         "TWINOPS_APPLY_ENABLED": os.environ.get("TWINOPS_APPLY_ENABLED", "true"),
         "TWINOPS_NETWORK_URL": "http://127.0.0.1:8010",
+        "TWINOPS_NETWORK_PROXY_PREFIX": "/metro",
         "TWINOPS_NETWORK_TOKEN": secrets.token_hex(32),
         "TWINOPS_NETWORK_PUBLIC_URL": f"{public}/metro/",
         "TWINOPS_LAB_DIR": os.environ.get("TWINOPS_LAB_DIR", "/var/lib/twinops/lab"),
         "TWINOPS_DATA_DIR": os.environ.get("TWINOPS_DATA_DIR", "/var/lib/twinops/data"),
         "TWINOPS_NETWORK_DATA": "/var/lib/twinops/metro/state.json",
     }
-    if not base.get("TWINOPS_OPERATOR_TOKEN"):
-        print("TWINOPS_OPERATOR_TOKEN is required: a public site must not let anyone approve changes", file=sys.stderr)
+    demo_approval = _bool("TWINOPS_DEMO_APPROVAL", False)
+    if demo_approval and _bool("TWINOPS_REQUIRE_AUTH", False):
+        print("Demo approval cannot be combined with role authentication", file=sys.stderr)
+        return 1
+    if not base.get("TWINOPS_OPERATOR_TOKEN") and not demo_approval:
+        print("TWINOPS_OPERATOR_TOKEN is required unless synthetic demo approval is explicitly enabled", file=sys.stderr)
         return 1
     python = sys.executable
     api = subprocess.Popen([python, "-m", "twinops"], env={**base, "HOST": "0.0.0.0", "PORT": os.environ.get("PORT", "8080"),  # noqa: S104
-                                                           "TWINOPS_NETWORK_PROXY_PREFIX": "/metro", "TWINOPS_CORS_ORIGINS": public})
+                                                           "TWINOPS_CORS_ORIGINS": public})
     children = [api]
 
     def stop(*_args: object) -> None:

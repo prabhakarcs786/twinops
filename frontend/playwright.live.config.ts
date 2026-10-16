@@ -37,6 +37,7 @@ export default defineConfig({
       TWINOPS_TWIN: 'model',
       TWINOPS_PLANNER: 'runbook',
       TWINOPS_OPERATOR_TOKEN: 'e2e-passcode',
+      TWINOPS_DEMO_APPROVAL: 'false',
       TWINOPS_RATE_LIMIT_PER_MIN: '600',
       TWINOPS_MAX_ACTIVE_RUNS: '100',
       TWINOPS_POSTCHECK_INTERVAL_S: '0',

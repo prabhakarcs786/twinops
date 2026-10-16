@@ -11,6 +11,8 @@ interface Props {
   view: RunView;
   /** Backend requires an operator passcode (server-side token check). */
   requirePasscode?: boolean;
+  /** Explicit server-side opt-in for the synthetic demo, never a stored credential. */
+  demoApproval?: boolean;
   canApprove?: boolean;
   busy?: boolean;
   error?: string | null;
@@ -19,13 +21,14 @@ interface Props {
   onDecide: (operator: string, comment: string, decision: 'approve' | 'reject', passcode: string) => void;
 }
 
-export function ApprovalDialog({ open, view, requirePasscode = false, canApprove = true, busy = false, error = null, targetLabel = 'demo network only', onClose, onDecide }: Props) {
+export function ApprovalDialog({ open, view, requirePasscode = false, demoApproval = false, canApprove = true, busy = false, error = null, targetLabel = 'demo network only', onClose, onDecide }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [operator, setOperator] = useState('');
   const [comment, setComment] = useState('');
   const [passcode, setPasscode] = useState('');
   const [ack, setAck] = useState(false);
   const selected = view.run.selected!;
+  const passcodeOptional = demoApproval && !requirePasscode;
 
   useEffect(() => {
     const dialog = ref.current;
@@ -38,7 +41,7 @@ export function ApprovalDialog({ open, view, requirePasscode = false, canApprove
   const submit = (decision: 'approve' | 'reject') => (e?: FormEvent) => {
     e?.preventDefault();
     if (missing || (decision === 'approve' && (!ack || !canApprove))) return;
-    onDecide(operator.trim(), comment.trim(), decision, passcode);
+    onDecide(operator.trim(), comment.trim(), decision, passcodeOptional ? '' : passcode);
   };
 
   return (
@@ -114,12 +117,15 @@ export function ApprovalDialog({ open, view, requirePasscode = false, canApprove
             <span>Comment (optional)</span>
             <input value={comment} onChange={(e) => setComment(e.target.value)} autoComplete="off" placeholder="Reviewed diff, rollback and untested conditions" />
           </label>
-          {requirePasscode && (
+          {(requirePasscode || passcodeOptional) && (
             <label>
-              <span>Operator passcode</span>
-              <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} required autoComplete="off" />
+              <span>Operator passcode{passcodeOptional ? ' (not required for demo)' : ''}</span>
+              <input type="password" value={passcodeOptional ? '' : passcode} placeholder={passcodeOptional ? '••••••••' : undefined}
+                disabled={passcodeOptional} onChange={(e) => setPasscode(e.target.value)} required={requirePasscode} autoComplete="off"
+                aria-describedby={passcodeOptional ? 'approval-demo-note' : undefined} />
             </label>
           )}
+          {passcodeOptional && <p id="approval-demo-note" className="approval-demo-note">Demo mode: no passcode needed. The dots are a placeholder; approval applies only to the synthetic lab.</p>}
           <label className="check">
             <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
             <span>I reviewed the evidence and the untested conditions. Approval binds to this hash and target state only.</span>

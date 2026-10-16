@@ -1791,6 +1791,17 @@
   text-transform: none;
   color: var(--text-2);
 }
+.approval-demo-note {
+  align-self: center;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.approval-form input:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+}
 .approval-form .check input {
   width: 18px;
   height: 18px;

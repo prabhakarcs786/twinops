@@ -15,7 +15,7 @@ The [sanitized run record](evidence/recorded-demo.json) preserves model-call pro
 
 The service can scale to zero. During startup the workbench can load while Metro temporarily returns 503. Wait and refresh Metro; proceed only when the [Metro health endpoint](https://twinops-live-705406130795.europe-west1.run.app/metro/api/health) reports `ready: true` and the workbench shows a connected application with current measurements. API health alone is insufficient. If Metro remains unavailable after a few minutes, contact the project host before attempting an exercise.
 
-Both applications share one lab across visitors. Coordinate a session with the project host before introducing a fault. The host provides approval access privately or performs that step during a guided session; the operator passcode is not published.
+Both applications share one lab across visitors. Coordinate a session with the project host before introducing a fault. Demo approval requires no passcode. Enter an operator label, review the evidence and tick the acknowledgment before applying. The disabled password field shows placeholder dots, not a hidden credential; approval affects only this synthetic lab.
 
 ## Inspect without changing the lab
 
@@ -24,16 +24,16 @@ Both applications share one lab across visitors. Coordinate a session with the p
 3. The [health endpoint](https://twinops-live-705406130795.europe-west1.run.app/api/health) reports API health. The [configuration endpoint](https://twinops-live-705406130795.europe-west1.run.app/api/config) reports configured planner and twin readiness; it does not establish a successful model invocation.
 4. Open **Recent incidents** if saved investigations exist. Saved evidence is read-only after restart and may disappear when the Cloud Run instance is replaced. The overview's animations and browser evaluation are deterministic examples.
 
-## Follow a supported repair with the host
+## Follow a supported repair
 
 | Step | Action | Evidence to inspect |
 |---|---|---|
-| 1 | With the host's approval access ready and the shared lab idle, introduce a routing fault in Metro or the workbench controls | A measured outage appears; the incident is detected automatically |
+| 1 | With the shared lab idle, introduce a routing fault in Metro or the workbench controls | A measured outage appears; the incident is detected automatically |
 | 2 | Open the detected investigation | Timestamped observations, source IDs and ranked hypotheses; the fault label remains sealed |
 | 3 | Inspect **AI trace** | Actual provider/model calls, rejected output, latency/tokens and any runbook fallbacks; a model badge alone is insufficient |
 | 4 | Follow reproduction and candidate tests | The twin reproduces symptoms; alternatives have restoration, regression, challenge and rollback evidence |
 | 5 | Open **Decision review** | Proposed diff, evidence age, coverage, remaining uncertainty and individual gate results |
-| 6 | Have the authorized host approve the exact tested change | Operator identity label, explicit acknowledgment and protected approval; target drift must invalidate stale approval |
+| 6 | Enter an operator label, acknowledge the evidence and approve the exact tested change | No passcode is needed in demo mode; the signed approval binds the tested change and target state; target drift must invalidate stale approval |
 | 7 | Wait for the outcome and revisit Metro | Fresh post-checks establish recovery while the negative controls remain intact |
 | 8 | Download the Proof Pack | Incident/model provenance, selected and rejected changes, gate reasons, approval and outcome |
 
@@ -45,8 +45,8 @@ After the supported exercise is complete, introduce the **Link flap / Unsupporte
 
 ## Leave the shared lab ready
 
-If a passing candidate is awaiting a decision, have the authorized host approve or reject it before leaving. Reset is blocked during an active investigation; do not clear files or restart the instance to bypass ownership or recovery guards. If **Operator recovery** appears, stop the demo and let the host restore and verify the lab. A caller without approval access should use the read-only inspection above rather than start a fault exercise.
+If a passing candidate is awaiting a decision, approve or reject it before leaving. Reset is blocked during an active investigation; do not clear files or restart the instance to bypass ownership or recovery guards. If **Operator recovery** appears, stop the demo and let the host restore and verify the lab.
 
 ## Interpret the limits
 
-The demo uses synthetic topology and incidents with real protocol traffic. There is no real customer or carrier production access. A passing verdict establishes evidence under the defined tests; it does not guarantee all production conditions are safe. History is ephemeral on Cloud Run, approval is a shared role credential, and operator time savings remain unmeasured.
+The demo uses synthetic topology and incidents with real protocol traffic. There is no real customer or carrier production access. A passing verdict establishes evidence under the defined tests; it does not guarantee all production conditions are safe. History is ephemeral on Cloud Run. Public demo approval does not authenticate the entered operator label; protected deployments use server-side credentials. Operator time savings remain unmeasured.

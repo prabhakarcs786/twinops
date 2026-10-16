@@ -163,6 +163,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not supplied or not hmac.compare_digest(supplied, token):
             raise HTTPException(401, "operator passcode required", headers={"WWW-Authenticate": "Bearer"})
 
+    def decision_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
+        # Explicit synthetic-demo opt-in. Other operator actions keep their token check.
+        if not settings.demo_approval:
+            operator_auth(request, authorization)
+
     def planner_info() -> dict[str, Any]:
         from .planner.factory import build_planner
 
@@ -189,7 +194,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "twin": twin,
             "packs": [{"id": k, "name": v["name"]} for k, v in PACKS.items()],
             "faults": [{"id": f, **FAULT_INFO[f], "supported": f in SUPPORTED_FAULTS} for f in ALL_FAULTS],
-            "approvalAuth": settings.operator_token is not None and not settings.require_auth,
+            "approvalAuth": settings.operator_token is not None and not settings.require_auth and not settings.demo_approval,
+            "demoApproval": settings.demo_approval,
             "authenticationRequired": settings.require_auth,
             "role": access.role(request) if settings.require_auth else None,
             "harness": settings.harness_enabled and not settings.network_url,
@@ -283,7 +289,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    @app.post("/api/incidents/{incident_id}/decision", status_code=202, dependencies=[Depends(operator_auth)])
+    @app.post("/api/incidents/{incident_id}/decision", status_code=202, dependencies=[Depends(decision_auth)])
     async def decision(incident_id: str, body: DecisionRequest) -> dict[str, Any]:
         live = get_live(incident_id)
         try:

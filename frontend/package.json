@@ -15,6 +15,7 @@
     "test:engine": "node --test tests/engine/*.test.ts",
     "test:e2e": "playwright test",
     "test:live": "playwright test -c playwright.live.config.ts",
+    "test:demo-approval": "playwright test -c playwright.demo-approval.config.ts",
     "test:auth": "playwright test -c playwright.auth.config.ts",
     "export:deck": "node scripts/export-deck.mjs",
     "test": "npm run test:engine && npm run test:e2e",

@@ -40,12 +40,12 @@ Competition references: [published requirements](https://aibuildercup.com/themes
 
 1. Open Metro and inspect current journeys, measurement time and safety guardrails.
 2. Open TwinOps and check the connected application and planner in **Runtime details**.
-3. With the host's approval access ready, introduce a supported fault and follow the automatically detected investigation.
+3. With the shared lab idle, introduce a supported fault and follow the automatically detected investigation.
 4. Inspect **AI trace**, candidate tests, challenges and **Decision review**. Separate actual model calls from any runbook fallbacks.
-5. Have the authorized host approve the exact tested change, then compare fresh recovery probes in both apps and export the Proof Pack.
+5. Enter an operator label, acknowledge the evidence and approve the exact tested change without a passcode in demo mode, then compare fresh recovery probes in both apps and export the Proof Pack.
 6. After the exercise finishes, check that the unsupported link-flap case stops or escalates without guessing a repair.
 
-Coordinate the shared-lab session with the host; a visitor without approval access should use the read-only inspection. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/0LjDHiUBy0Y) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
+Coordinate the shared-lab session with the host to avoid interrupting another visitor. The demo passcode field is disabled and contains only placeholder dots, never a credential. The [judge guide](JUDGE_GUIDE.md) explains access, reset and recovery behavior. The [YouTube showcase](https://youtu.be/0LjDHiUBy0Y) and [sanitized run record](evidence/recorded-demo.json) preserve the completed routing demonstration.
 
 ## Why This Problem Matters
 
@@ -94,7 +94,7 @@ AI trace records distinguish model requests, rejected output and runbook fallbac
 | Proof Gate and apply gateway | Evaluate evidence and enforce the authorized write boundary |
 | SQLite | Journal incidents, events, decisions and review trials on the instance's local disk |
 | Cloud Build and Artifact Registry | Build and store the deployment image |
-| Secret Manager | Supply the operator approval credential |
+| Secret Manager | Store the protected-mode operator credential server-side; public demo approval does not use it |
 
 The deployed service is in `europe-west1`. Cloud Run uses Linux network namespaces instead of privileged Docker; local development uses Containerlab. See the deck's architecture diagram, [deployment script](../deploy/cloudrun-lab.sh), [Cloud Run entrypoint](../backend/twinops/cloudrun.py) and [technical guide](TECHNICAL_GUIDE.md#architecture).
 
@@ -144,7 +144,7 @@ Deployment introduces another boundary: code can persist evidence in SQLite whil
 
 The hosted prototype exercises three supported fault families: routing policy, DNS and TLS certificate expiry. An unsupported link-flap control tests refusal to guess outside the twin's fidelity. Typed catalogues and backend contracts provide extension points, but arbitrary vendor networks and new domains require their own adapters and fidelity validation.
 
-Today's service is a single shared demo. SQLite, active tasks and lab state are instance-local; history can disappear on replacement or scale-down. Concurrent visitors share one lab and must coordinate exercises. Approval uses a shared operator credential rather than individual enterprise SSO. Customer counts and topology are synthetic, and defined twin checks are not a universal safety guarantee.
+Today's service is a single shared demo. SQLite, active tasks and lab state are instance-local; history can disappear on replacement or scale-down. Concurrent visitors share one lab and must coordinate exercises. Public demo approval is open to visitors and uses an unverified operator label. Protected deployments use shared role credentials rather than individual enterprise SSO. Customer counts and topology are synthetic, and defined twin checks are not a universal safety guarantee.
 
 The next delivery steps are an exploratory operator study and a read-only shadow pilot. Wider adoption requires durable storage and coordination, individual identity and authorization, per-target execution isolation, owned monitoring, validated network adapters and tested recovery. Cloud Run hosting alone does not establish production scale or readiness.
 
@@ -152,8 +152,8 @@ The next delivery steps are an exploratory operator study and a read-only shadow
 
 The **three-minute submission video** is [available on YouTube](https://youtu.be/0LjDHiUBy0Y). It preserves the recorded workflow and includes the extended closing card. The README, judge guide, documentation index, recorded-demo metadata and both deck formats link to this submission version.
 
-The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The project host coordinates approval access privately.
+The video follows one real deployed run from the routing-fault click through Gemini investigation, twin tests, the failed alternative, exact diff, approval, measured recovery and Proof Pack download. Waiting time is shortened; the unsupported-fault escalation is not part of this video. The current public demo lets judges approve without a passcode after reviewing the evidence; the video records the earlier owner-authorized flow.
 
 Use the **official-template PDF** as the pitch-deck attachment. It covers team details, the idea, opportunities, implemented features, process flow, interface, architecture, technology, prototype snapshots, benchmarking, future development and public links. The organizer's download-instruction slide, empty spare slide and optional cost-estimate slide are omitted. The editable PowerPoint is retained alongside the PDF.
 
-The repository is already public. Before final submission, verify the video and all submitted links while signed out, wait for Metro and the twin to report ready, and enter the public repository, final video and workbench URLs in the HackSmith competition entry. Keep the Cloud Run deployment, Vertex AI access and billing active through evaluation. The shared lab can scale to zero; the [judge guide](JUDGE_GUIDE.md#open-the-prototype) explains startup readiness and private approval access.
+The repository is already public. Before final submission, verify the video and all submitted links while signed out, wait for Metro and the twin to report ready, and enter the public repository, final video and workbench URLs in the HackSmith competition entry. Keep the Cloud Run deployment, Vertex AI access and billing active through evaluation. The shared lab can scale to zero; the [judge guide](JUDGE_GUIDE.md#open-the-prototype) explains startup readiness and demo approval.

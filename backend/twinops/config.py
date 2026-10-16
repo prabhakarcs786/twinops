@@ -73,6 +73,7 @@ class Settings:
     max_active_runs: int = field(default_factory=lambda: int(os.environ.get("TWINOPS_MAX_ACTIVE_RUNS", "4")))
     apply_enabled: bool | None = field(default_factory=lambda: _bool("TWINOPS_APPLY_ENABLED", False) if "TWINOPS_APPLY_ENABLED" in os.environ else None)
     require_auth: bool = field(default_factory=lambda: _bool("TWINOPS_REQUIRE_AUTH", False))
+    demo_approval: bool = field(default_factory=lambda: _bool("TWINOPS_DEMO_APPROVAL", False))
     secure_cookies: bool = field(default_factory=lambda: _bool("TWINOPS_SECURE_COOKIES", False))
     postcheck_samples: int = field(default_factory=lambda: max(1, min(10, int(os.environ.get("TWINOPS_POSTCHECK_SAMPLES", "3")))))
     postcheck_interval_s: float = field(default_factory=lambda: max(0, min(60, float(os.environ.get("TWINOPS_POSTCHECK_INTERVAL_S", "2")))))
@@ -81,6 +82,12 @@ class Settings:
     def __post_init__(self) -> None:
         if self.apply_enabled is None:
             object.__setattr__(self, "apply_enabled", self.harness_enabled)
+        if self.demo_approval:
+            model_demo = self.twin == "model" and self.harness_enabled and not self.network_url
+            hosted_demo = (self.twin == "emulated" and self.lab_runtime == "netns"
+                           and self.network_url == "http://127.0.0.1:8010" and self.network_proxy_prefix == "/metro")
+            if self.require_auth or not (model_demo or hosted_demo):
+                raise ValueError("TWINOPS_DEMO_APPROVAL requires the synthetic model harness or bundled Metro lab, with role authentication disabled")
 
     def allows_apply(self) -> bool:
         """An operator can halt new writes without restarting or expiring evidence."""

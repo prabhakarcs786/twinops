@@ -26,7 +26,7 @@ Deployment and lab readiness were checked on **16 October 2026**: after startup,
 
 The [recorded repair evidence](docs/evidence/recorded-demo.json) retains the run shown in this video: ten actual Gemini calls, zero fallbacks, a selected model-proposed repair, owner-authorized approval and eleven passing checks in each of three recovery windows.
 
-The demo runs one shared lab. Coordinate a session with the project host before injecting a fault; approval and rejection require the host's operator passcode. Keep that credential out of the repository. History is local to the Cloud Run instance and can disappear when the instance is replaced.
+The demo runs one shared synthetic lab. Coordinate exercises with the project host so visitors do not interrupt each other. Judges can approve or reject without a passcode: enter an operator label, review the evidence and acknowledge it before applying. The disabled passcode field contains only placeholder dots, never a credential. History is local to the Cloud Run instance and can disappear when the instance is replaced.
 
 ## Documentation
 
@@ -71,7 +71,7 @@ TwinOps tests competing repairs against a reproduced incident, challenges the st
 | Google Gen AI SDK | Sends structured requests; responses are schema-validated and catalogue-checked |
 | Cloud Run, second-generation environment | Hosts TwinOps, Metro Network and two isolated Linux namespace lab networks |
 | Cloud Build and Artifact Registry | Build and store the connected-demo container image |
-| Secret Manager | Supplies the approval credential to the service |
+| Secret Manager | Keeps the protected-mode operator credential on the server; public demo approval does not use it |
 
 Firebase and Firestore are not used. Cloud Run supplies the deployment path, and SQLite stores evidence on the instance's local disk.
 
@@ -228,6 +228,12 @@ Evidence is committed to `TWINOPS_DATA_DIR/incidents.sqlite3` before events are 
 
 The same transaction journals events by incident/sequence and operations by operation ID. Approvals are HMAC-signed and bind the exact tested change, target hash, operator, decision, expiry and operation ID. Execution rechecks the signature, content hash, evidence age, target drift and apply policy. Repeating the same completed operation does not write again. Three post-change observation windows run by default; any failed window triggers rollback and verification, retaining the failed window in the outcome. Signing authority is intentionally lost on restart.
 
+### Public synthetic demo approval
+
+`TWINOPS_DEMO_APPROVAL=true` explicitly enables approval and rejection without a passcode for the synthetic model harness or the bundled Cloud Run Metro lab. It defaults to `false` and cannot be combined with `TWINOPS_REQUIRE_AUTH=true` or an external network connector. To deploy the judge demo, run `TWINOPS_DEMO_APPROVAL=true deploy/cloudrun-lab.sh`.
+
+The browser receives only a mode flag, never the server credential. The disabled field shows placeholder dots; no password is autofilled or sent. The operator ID is an unverified review label. Evidence gates, explicit review, signed change binding, expiry, target drift, the apply kill switch and recovery checks remain in force. Drift injection retains its operator-token check.
+
 ### Authenticated single-host pilot
 
 Set `TWINOPS_REQUIRE_AUTH=true` and configure distinct `TWINOPS_VIEWER_TOKEN`, `TWINOPS_INVESTIGATOR_TOKEN` and `TWINOPS_OPERATOR_TOKEN` secrets. Viewers read evidence and perform review trials, investigators start investigations and ask questions, and approvers also approve/reject. Browser login uses an expiring HttpOnly session cookie. Set `TWINOPS_SECURE_COOKIES=true` when using HTTPS. These are shared role credentials, not individual SSO identities; the entered operator ID is a review label.
@@ -362,7 +368,7 @@ Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/config` | Planner, twin backend, whether approval needs a passcode |
+| `GET /api/config` | Planner, twin backend, demo approval mode and whether approval needs a passcode |
 | `GET /api/connections` | Connection status, measured topology/probes, exercise capabilities and detected issues |
 | `POST /api/connections/network/fault` | Human lab exercise: `{fault}`; forwards to Metro Network, then automatic detection follows |
 | `POST /api/connections/network/reset` | Human lab reset; preserves Metro's active-investigation and recovery guards |
@@ -370,7 +376,7 @@ Measured on a laptop (Docker Desktop, 8 vCPU), runbook planner:
 | `GET /api/incidents` | Latest 50 saved incident summaries for history |
 | `GET /api/incidents/{id}/events` | Server-Sent Events (`run`, `end`), resumable with `Last-Event-ID` |
 | `GET /api/incidents/{id}` | Run record, approval, outcome, AI briefing |
-| `POST /api/incidents/{id}/decision` | Approve or reject. Needs `Authorization: Bearer <TWINOPS_OPERATOR_TOKEN>` when set |
+| `POST /api/incidents/{id}/decision` | Approve or reject. Needs `Authorization: Bearer <TWINOPS_OPERATOR_TOKEN>` when set, except in explicit synthetic demo mode |
 | `POST /api/incidents/{id}/drift` | Harness: edit the target after the snapshot (proves approval invalidation) |
 | `GET /api/incidents/{id}/reveal` | Sealed fault label, only after the verdict |
 | `GET /api/incidents/{id}/proof-pack?format=json\|html` | Proof Pack export (HTML is served sandboxed) |

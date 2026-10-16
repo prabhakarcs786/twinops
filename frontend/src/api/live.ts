@@ -13,6 +13,7 @@ export interface BackendConfig {
   planner: { kind: string; provider: string; model: string; mode: string; version: string };
   twin: { backend: 'model' | 'emulated'; ready: boolean; detail: string };
   approvalAuth: boolean;
+  demoApproval?: boolean;
   harness: boolean;
   connectedApplication?: boolean;
   networkUrl?: string | null;

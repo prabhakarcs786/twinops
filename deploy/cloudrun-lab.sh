@@ -16,6 +16,7 @@ MEMORY="${MEMORY:-1Gi}"
 # Lab probes run as short-lived processes; more parallel ones than CPUs exhaust Cloud Run's CPU quota and skew latency.
 LAB_CONCURRENCY="${LAB_CONCURRENCY:-${CPU}}"
 MODEL="${TWINOPS_LLM_MODEL:-gemini-2.5-flash}"
+DEMO_APPROVAL="${TWINOPS_DEMO_APPROVAL:-false}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
@@ -42,7 +43,7 @@ gcloud run deploy "${SERVICE}" \
   --min-instances 0 --max-instances 1 \
   --no-cpu-throttling \
   --concurrency 80 --timeout 900 --session-affinity \
-  --set-env-vars "TWINOPS_PUBLIC_URL=${URL},TWINOPS_LAB_CONCURRENCY=${LAB_CONCURRENCY},TWINOPS_PLANNER=auto,TWINOPS_LLM_MODEL=${MODEL},TWINOPS_RATE_LIMIT_PER_MIN=10,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
+  --set-env-vars "TWINOPS_PUBLIC_URL=${URL},TWINOPS_LAB_CONCURRENCY=${LAB_CONCURRENCY},TWINOPS_PLANNER=auto,TWINOPS_LLM_MODEL=${MODEL},TWINOPS_DEMO_APPROVAL=${DEMO_APPROVAL},TWINOPS_RATE_LIMIT_PER_MIN=10,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
   --set-secrets "TWINOPS_OPERATOR_TOKEN=twinops-operator-token:latest" \
   --allow-unauthenticated
 

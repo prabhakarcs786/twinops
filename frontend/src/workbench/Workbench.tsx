@@ -396,7 +396,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
   const loadingWorkspace = resolving || loadingIncident || Boolean(!hasRun && watching && !connection && !connectionError);
   const target = connected ? CONNECTED_TARGET : DEMO_TARGET;
   const canInvestigate = engine === 'local' || Boolean(backend && (!backend.authenticationRequired || backend.role === 'investigator' || backend.role === 'approver'));
-  const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth && (!backend.authenticationRequired || backend.role === 'approver'));
+  const canDrift = engine === 'local' || Boolean(backend?.harness && !backend.approvalAuth && !backend.demoApproval && (!backend.authenticationRequired || backend.role === 'approver'));
   const thinking = current?.kind === 'model_call' ? current : undefined;
   const activePlanner = view?.run.planner ?? backend?.planner;
   const ask: AskTarget | null = canInvestigate && live && !live.detail?.recovered && activePlanner?.kind === 'llm' && activePlanner.provider !== 'simulated-outage'
@@ -697,6 +697,7 @@ export function Workbench({ theme, onToggleTheme }: Props) {
           open={dialogOpen}
           view={view}
           requirePasscode={engine === 'live' && Boolean(backend?.approvalAuth)}
+          demoApproval={engine === 'live' && Boolean(backend?.demoApproval)}
           canApprove={!live || Boolean(lifecycle?.canApprove) && (!backend?.authenticationRequired || backend.role === 'approver')}
           busy={decisionBusy}
           error={decisionError}

@@ -104,7 +104,9 @@ GOOGLE_CLOUD_LOCATION=europe-west1
 
 Local Gemini API-key mode also supports `GEMINI_API_KEY_FILE`; the key stays in an ignored file. Full options are documented in [`.env.example`](../.env.example), [config.py](../backend/twinops/config.py) and the [README](../README.md#google-cloud-and-ai).
 
-The [connected deployment script](../deploy/cloudrun-lab.sh), [Dockerfile](../deploy/cloudrun-lab.Dockerfile) and [Cloud Run entrypoint](../backend/twinops/cloudrun.py) define the hosted runtime. Provision the project, required APIs, runtime service account and operator secret as described in the deployment scripts. The connected deployment uses one Cloud Run instance for the shared lab, Vertex AI for reasoning, Secret Manager for the approval credential, and Cloud Build/Artifact Registry for the image.
+The [connected deployment script](../deploy/cloudrun-lab.sh), [Dockerfile](../deploy/cloudrun-lab.Dockerfile) and [Cloud Run entrypoint](../backend/twinops/cloudrun.py) define the hosted runtime. Provision the project, required APIs, runtime service account and operator secret as described in the deployment scripts. The connected deployment uses one Cloud Run instance for the shared lab, Vertex AI for reasoning, Secret Manager for the protected-mode operator credential, and Cloud Build/Artifact Registry for the image.
+
+The public judge deployment explicitly enables `TWINOPS_DEMO_APPROVAL=true`. This flag defaults to false and is accepted only for the synthetic model harness or bundled loopback Metro lab, with role authentication disabled. Only approve/reject bypasses the operator-token check; the browser receives a boolean mode flag and displays empty, disabled placeholder dots. No real password is autofilled or exposed. Human review and all evidence, freshness, drift, signing and apply-policy checks remain active. Set the flag to false for credential-protected approval.
 
 ## API and evidence
 
@@ -115,7 +117,7 @@ The [connected deployment script](../deploy/cloudrun-lab.sh), [Dockerfile](../de
 | `GET /api/incidents` | Saved investigations |
 | `GET /api/incidents/{id}` | Observations, candidates, approval and outcome |
 | `GET /api/incidents/{id}/events` | Resumable server-sent event stream |
-| `POST /api/incidents/{id}/decision` | Protected approve/reject decision |
+| `POST /api/incidents/{id}/decision` | Approve/reject; credential required outside explicit demo mode |
 | `GET /api/incidents/{id}/proof-pack?format=json` | Download the decision evidence; HTML is also supported |
 | `GET /api/docs` | Generated API documentation |
 
@@ -130,6 +132,6 @@ Two public records retain the verification scope:
 
 This is a shared prototype using synthetic topology, incidents and customer counts with real protocol services. The recorded approval was executed by browser automation on the owner's explicit instruction. The demo establishes a measured lab result, not production reliability or operator time savings.
 
-Cloud Run instance-local history can disappear when the instance is replaced. SQLite persistence on an unchanged disk does not provide cloud durability. Shared role credentials are not individual enterprise identity. Increased probe concurrency is not a production load test; physical-layer behavior and routing convergence timing remain outside the recorded verification.
+Cloud Run instance-local history can disappear when the instance is replaced. SQLite persistence on an unchanged disk does not provide cloud durability. Public demo approval uses an unverified operator label. Shared role credentials in protected deployments are not individual enterprise identity. Increased probe concurrency is not a production load test; physical-layer behavior and routing convergence timing remain outside the recorded verification.
 
 Production adoption requires durable storage and coordination, individual identity and authorization, per-target isolation, validated network adapters, monitoring and tested operational recovery. An operator study and read-only shadow pilot would establish whether the workflow improves review effort before broader deployment.

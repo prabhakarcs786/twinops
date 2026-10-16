@@ -1,10 +1,10 @@
 {
-  "version": "2026-10-16-judge-refresh",
+  "version": "2026-10-16-demo-approval",
   "pdfUrl": "https://raw.githubusercontent.com/prabhakarcs786/twinops/main/docs/TwinOps_Deck.pdf",
   "pptxUrl": "https://raw.githubusercontent.com/prabhakarcs786/twinops/main/docs/TwinOps_Deck.pptx",
   "videoUrl": "https://youtu.be/0LjDHiUBy0Y",
-  "pdfSha256": "a60278bf168b177474fcf49cf1048e444420ca6dbdbf72d4a01c73f5b7c7f238",
-  "pptxSha256": "fbb81092d25ca5cdd3c306d37fed27a681522a1a3a3dcef7f1bdabafb0b1ae97",
+  "pdfSha256": "9152f0fbe8da445d590b8dfcb804d2f5abb53eef2baeb3d31a0cc4937c2a06fe",
+  "pptxSha256": "9e1964faa7726c39839ed65e7610e73a08ce5cae70cf1c95726c527c0768aefa",
   "slides": [
     {
       "number": 1,
@@ -77,7 +77,7 @@
       "paragraphs": [
         "The engineer approves a specific tested change: remove route-filter rule 30 from router B17. The review shows the change hash, target-state hash and rollback rehearsal.",
         "The same panel explains untested conditions, including physical hardware and production-scale behavior. Passing technical tests alone does not authorize a network change.",
-        "This is a cropped screenshot from the actual hosted recording on 15 October 2026. The private credential form is outside the crop. Approval access is shared privately with the authorized reviewer."
+        "This is a cropped screenshot from the actual hosted recording on 15 October 2026. The private credential form is outside the crop. The current public demo requires no passcode: its disabled field contains only placeholder dots. Human review and explicit approval are still required."
       ],
       "links": [],
       "image": "/deck-assets/slide-06-027322fe62d4.webp",
@@ -102,12 +102,12 @@
       "alt": "Table lists Google Cloud services and application components with their implemented responsibilities.",
       "paragraphs": [
         "Cloud Run (second generation) hosts TwinOps, Metro and the isolated namespace networks. Gemini 2.5 Flash through Vertex AI supplies hypotheses, repair proposals, challenges and bounded revisions. The Google Gen AI SDK sends structured requests that undergo schema and action-catalogue validation.",
-        "Secret Manager provides the operator approval credential. Cloud Build and Artifact Registry build and store the container. React provides the review interface, FastAPI orchestrates investigations, and SQLite journals local evidence.",
+        "Secret Manager stores the server credential for protected approval mode; public demo approval does not use it. Cloud Build and Artifact Registry build and store the container. React provides the review interface, FastAPI orchestrates investigations, and SQLite journals local evidence.",
         "FRR, CoreDNS and nginx supply real routing, DNS, IPv4/IPv6 and TLS behavior. Firebase and Firestore are not used. The organizer clarification supplied by the project owner accepts the Cloud Run deployment path."
       ],
       "links": [],
-      "image": "/deck-assets/slide-08-8665a5cbdd14.webp",
-      "sha256": "8665a5cbdd14c5e5ecf471b2a1f8d4e8afc926ff36ed6b645847d58c3438151c"
+      "image": "/deck-assets/slide-08-6deec86d1e72.webp",
+      "sha256": "6deec86d1e724d38a415ff165a9a4b8302dbc22e7fad1b3c02ba1eac6985c7fb"
     },
     {
       "number": 9,
@@ -149,13 +149,13 @@
       "title": "Limits and next steps",
       "alt": "Roadmap moves from the shared lab to operator evaluation, a read-only shadow pilot and operational hardening.",
       "paragraphs": [
-        "Today, the prototype supports routing, DNS and TLS exercises on synthetic topology. It uses one shared lab instance, ephemeral evidence and a shared approval credential.",
+        "Today, the prototype supports routing, DNS and TLS exercises on synthetic topology. It uses one shared lab instance, ephemeral evidence and open demo approval with an unverified operator label.",
         "Next, evaluate operator investigation and review effort against a baseline, measuring escalation, rollback outcomes and decision quality. Then validate adapters and twin coverage in a read-only shadow pilot before enabling operational changes.",
         "Wider deployment needs durable evidence storage, individual identity, isolation per target, monitoring ownership and tested recovery. These are planned capabilities."
       ],
       "links": [],
-      "image": "/deck-assets/slide-11-5b081bd68b08.webp",
-      "sha256": "5b081bd68b08aff5c4832332b04c2107ae7d2ec481df4a74b6b30fe8755306d5"
+      "image": "/deck-assets/slide-11-a60fa9702d68.webp",
+      "sha256": "a60fa9702d68ac5f0030f91e5a83621c4408ed320a0cc6483825ec1b6f24ec9b"
     },
     {
       "number": 12,
@@ -163,7 +163,7 @@
       "alt": "Links to the source repository, three-minute demo, workbench, Metro and judge guide.",
       "paragraphs": [
         "Watch the three-minute recording for the completed live workflow, then inspect the public source and evidence. The workbench and Metro show the running prototype.",
-        "Use the judge guide for access and walkthrough instructions. Coordinate an interactive exercise with the host because this is a shared lab. Approval credentials are provided privately."
+        "Use the judge guide for access and walkthrough instructions. Coordinate an interactive exercise with the host because this is a shared lab. Demo approval needs no passcode; enter an operator label and acknowledge the reviewed evidence. No real password is autofilled or exposed."
       ],
       "links": [
         {
