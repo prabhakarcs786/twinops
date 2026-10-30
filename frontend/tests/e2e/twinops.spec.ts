@@ -15,6 +15,36 @@ test('landing page tells the story and passes automated accessibility checks', a
   await expectNoA11yViolations(page);
 });
 
+test('logo artwork loads in both themes and fits the header', async ({ page }) => {
+  for (const width of [page.viewportSize()!.width, 320, 1100]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const path of ['/', '/workbench?engine=local']) {
+      await page.goto(path);
+      const home = page.getByRole('link', { name: 'TwinOps home' });
+      for (const theme of ['light', 'dark']) {
+        if (await page.locator('html').getAttribute('data-theme') !== theme) {
+          await page.getByRole('button', { name: `Switch to ${theme} theme` }).click();
+        }
+        const logo = home.getByRole('img', { name: 'TwinOps - Digital Twin Operations' });
+        await expect(logo).toBeVisible();
+        await expect(logo).toHaveAttribute('src', theme === 'dark' ? '/twinops-logo-dark.png' : '/twinops-logo.png');
+        await expect(logo).toHaveJSProperty('complete', true);
+        await expect(logo).not.toHaveJSProperty('naturalWidth', 0);
+        const logoBox = await logo.boundingBox();
+        const actionsBox = await page.locator('.site-actions').boundingBox();
+        const headerBox = await page.locator('.site-header-inner').boundingBox();
+        expect(logoBox!.x + logoBox!.width).toBeLessThanOrEqual(actionsBox!.x);
+        expect(logoBox!.y).toBeGreaterThanOrEqual(headerBox!.y);
+        expect(logoBox!.y + logoBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
+        expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(headerBox!.x + headerBox!.width);
+      }
+      await home.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\/$/);
+    }
+  }
+});
+
 test('evaluation harness runs in the browser and meets its safety targets', async ({ page }) => {
   await page.goto('/#evaluation');
   await page.getByRole('button', { name: /Run 40 seeded incidents/ }).click();
